@@ -71,14 +71,15 @@ compile = True # use PyTorch 2.0 to compile the model to be faster
 # LOZO specific parameters
 zo_eps = 1e-3       # perturbation size for zero-order gradient estimation
 rank_r = 4          # rank for low-rank perturbation
-step_interval = 10  # interval for updating the V matrices (every ν steps)
+step_interval = 50  # interval for updating the V matrices (every ν steps)
 use_momentum = False # whether to use momentum in LOZO (LOZO-M)
 momentum_beta = 0.9 # momentum coefficient for LOZO-M
-zo_q = 1            # number of finite differences computations to average over
+zo_q = 1            # number of finite differences computations to AVERAGE over (for LoZO, SVD-LoZO, MeZO)
 # Rank-adaptive LOZO parameters
 rank_adaptive = False # whether to use adaptive rank scheduling
 min_rank = 1        # minimum rank for adaptive scheduling
 max_rank = 16       # maximum rank for adaptive scheduling
+rank_strategy = 'linear'  # rank scheduling strategy: 'linear', 'exponential', 'cosine'
 # SVD-LOZO specific parameters
 svd_tau = 0.6       # threshold for adaptive rank selection (keep σ > τ * σ_max) - increased for actual rank reduction
 svd_max_rank = 16   # maximum rank for randomized SVD
@@ -86,18 +87,23 @@ use_full_svd = False # whether to use full SVD (True) or randomized SVD (False)
 # Training method - 'lozo', 'lozom', 'svdlozo', 'mezo', 'mezom', 'dimezo', 'dilozo', 'kronzo', 'adam', 'sgd'
 train_method = 'lozo'
 # DiMeZO specific parameters
-directional_q = 10       # number of directions to try in directional selection
+directional_q = 10       # number of directions to try in directional selection (for DiMeZO, DiLoZO, DiKronZO)
 dimezo_direct_movement = False  # if True, move directly in best direction; if False, use gradient estimation (f+ - f-)/2ε
 # KronZO specific parameters
 kron_max_factor = 32     # maximum factor size for Kronecker factorization
 kron_strategy = 'approx_square'  # 'approx_square', 'fixed_factor', 'power2'
-dikronzo_direct_movement = False
 # Adaptive zo_eps parameters
 use_adaptive_eps = False    # whether to use adaptive zo_eps
 adaptive_eps_window = 20    # window size for tracking success rate
 adaptive_eps_lr_coupling = 0.5  # strength of coupling between eps and learning rate (0=none, 1=full)
 adaptive_eps_success_high = 0.7  # success rate threshold for increasing eps
 adaptive_eps_success_low = 0.3   # success rate threshold for decreasing eps
+# Numerical stability parameters for ZO methods
+zo_grad_clip = 1.0           # gradient clipping for ZO methods (applied to projected gradients)
+zo_param_clip = 10.0         # parameter clipping for ZO methods (applied to parameter updates)
+zo_loss_threshold = 100.0    # loss threshold for detecting instability
+zo_recovery_lr_factor = 0.1  # learning rate reduction factor when recovering from instability
+zo_max_recovery_attempts = 3 # maximum number of recovery attempts before stopping
 # -----------------------------------------------------------------------------
 config_keys = [k for k,v in globals().items() if not k.startswith('_') and isinstance(v, (int, float, bool, str))]
 exec(open('configurator.py').read()) # overrides from command line or config file
@@ -163,15 +169,102 @@ def get_batch(split):
 # LOZO specific functions
 # -----------------------------------------------------------------------------
 
-def get_current_rank(iter_num, max_iters, min_rank, max_rank):
+def clip_zo_gradient(projected_grad, max_norm=1.0):
     """
-    Compute current rank using linear scheduling from min_rank to max_rank.
+    Clip the projected gradient from zero-order methods.
+    
+    Args:
+        projected_grad: The projected gradient scalar
+        max_norm: Maximum allowed norm for the gradient
+    
+    Returns:
+        clipped_grad: The clipped gradient
+    """
+    if abs(projected_grad) > max_norm:
+        return max_norm * (1.0 if projected_grad > 0 else -1.0)
+    return projected_grad
+
+def clip_zo_parameter_update(param_update, max_norm=10.0):
+    """
+    Clip parameter updates to prevent large jumps.
+    
+    Args:
+        param_update: The parameter update tensor
+        max_norm: Maximum allowed norm for the update
+    
+    Returns:
+        clipped_update: The clipped parameter update
+    """
+    update_norm = torch.norm(param_update)
+    if update_norm > max_norm:
+        return param_update * (max_norm / update_norm)
+    return param_update
+
+def check_loss_stability(loss, threshold=100.0):
+    """
+    Check if the loss is stable (not NaN, not infinite, and below threshold).
+    
+    Args:
+        loss: Loss value (can be tensor or float)
+        threshold: Maximum acceptable loss value
+        
+    Returns:
+        bool: True if loss is stable, False otherwise
+    """
+    # Convert to float if it's a tensor
+    if torch.is_tensor(loss):
+        loss_val = loss.item()
+    else:
+        loss_val = float(loss)
+    
+    # Check for NaN, infinity, or threshold violation
+    if torch.isnan(torch.tensor(loss_val)) or torch.isinf(torch.tensor(loss_val)) or loss_val > threshold:
+        return False
+    return True
+
+def recover_from_instability(model, optimizer, recovery_lr_factor=0.1):
+    """
+    Attempt to recover from numerical instability by reducing learning rate
+    and resetting momentum buffers.
+    
+    Args:
+        model: The model
+        optimizer: The optimizer
+        recovery_lr_factor: Factor to reduce learning rate by
+    
+    Returns:
+        new_lr: The new learning rate after recovery
+    """
+    # Reduce learning rate
+    for param_group in optimizer.param_groups:
+        param_group['lr'] *= recovery_lr_factor
+        new_lr = param_group['lr']
+    
+    # Reset momentum buffers if they exist
+    if hasattr(optimizer, 'state'):
+        for state in optimizer.state.values():
+            if 'momentum_buffer' in state:
+                state['momentum_buffer'].zero_()
+            if 'exp_avg' in state:
+                state['exp_avg'].zero_()
+            if 'exp_avg_sq' in state:
+                state['exp_avg_sq'].zero_()
+    
+    if master_process:
+        print(f"Recovered from instability. New learning rate: {new_lr:.2e}")
+    
+    return new_lr
+
+def get_current_rank(iter_num, max_iters, min_rank, max_rank, strategy='linear'):
+    """
+    Compute current rank using different scheduling strategies from min_rank to max_rank.
     
     Args:
         iter_num: Current iteration number
         max_iters: Total number of iterations
         min_rank: Starting rank
         max_rank: Ending rank
+        strategy: Scheduling strategy ('linear', 'exponential', 'cosine')
     
     Returns:
         current_rank: Integer rank for current iteration
@@ -179,9 +272,24 @@ def get_current_rank(iter_num, max_iters, min_rank, max_rank):
     if not rank_adaptive:
         return rank_r  # Use fixed rank if adaptive is disabled
     
-    # Linear interpolation from min_rank to max_rank
+    # Compute progress ratio [0, 1]
     progress = min(iter_num / max_iters, 1.0)  # Clamp to [0, 1]
-    current_rank_float = min_rank + progress * (max_rank - min_rank)
+    
+    # Apply different scheduling strategies
+    if strategy == 'linear':
+        # Linear interpolation: steady increase
+        progress_scaled = progress
+    elif strategy == 'exponential':
+        # Exponential: slow start, faster later (progress^2)
+        progress_scaled = progress ** 2
+    elif strategy == 'cosine':
+        # Cosine: smooth S-curve transitions
+        progress_scaled = 0.5 * (1 - math.cos(math.pi * progress))
+    else:
+        raise ValueError(f"Unknown rank strategy: {strategy}. Use 'linear', 'exponential', or 'cosine'")
+    
+    # Compute current rank
+    current_rank_float = min_rank + progress_scaled * (max_rank - min_rank)
     current_rank = max(min_rank, min(max_rank, int(round(current_rank_float))))
     
     return current_rank
@@ -191,7 +299,7 @@ def lowrank_zo_perturb_parameters(model, v_dict, zo_random_seed, step, scaling_f
     """
     Perturb the parameters with random vector uv^t.
     Only update V matrices every step_interval steps.
-    Supports adaptive rank by resizing V matrices when needed.
+    Supports adaptive rank by extending/truncating V matrices when needed.
     """
     if current_rank is None:
         current_rank = rank_r  # Use default rank if not specified
@@ -212,14 +320,30 @@ def lowrank_zo_perturb_parameters(model, v_dict, zo_random_seed, step, scaling_f
         if param.ndim >= 2:
             # For matrices, use low-rank perturbation
             # Create new V matrix at the specified interval or if not present
-            need_new_v = (step % step_interval == 0 or 
-                         clean_name not in v_dict or 
-                         v_dict[clean_name].size(1) != current_rank)  # Rank changed
+            need_new_v = (step % step_interval == 0 or clean_name not in v_dict)
+            rank_changed = (clean_name in v_dict and v_dict[clean_name].size(1) != current_rank)
             
             if need_new_v:
+                # Create completely new V matrix
                 v = torch.randn(param.size(1), current_rank, device=param.device, dtype=param.dtype)
                 v_dict[clean_name] = v
+            elif rank_changed:
+                # Rank changed: extend or truncate existing V matrix
+                old_v = v_dict[clean_name]
+                old_rank = old_v.size(1)
+                
+                if current_rank > old_rank:
+                    # Extend V matrix: keep existing columns and add new random columns
+                    new_cols = torch.randn(param.size(1), current_rank - old_rank, 
+                                         device=param.device, dtype=param.dtype)
+                    v = torch.cat([old_v, new_cols], dim=1)
+                    v_dict[clean_name] = v
+                else:
+                    # Truncate V matrix: keep only the first current_rank columns
+                    v = old_v[:, :current_rank].contiguous()
+                    v_dict[clean_name] = v
             else:
+                # Use existing V matrix
                 v = v_dict[clean_name]
             
             u = torch.randn(param.size(0), current_rank, device=param.device, dtype=param.dtype)
@@ -247,13 +371,35 @@ def lowrank_zo_step(model, X, Y, v_dict, step, zo_random_seed, current_rank=None
     """
     Estimate gradient using LOZO with q-times finite differences.
     
-    For q>1:
-    1. Initialize g = 0
-    2. For each q iteration:
-       - Generate a single UV^T low-rank perturbation
-       - Compute (f+ - f-)/2*zo_eps
-       - Accumulate: g += (scalar coefficient) * UV^T
-    3. Average: g = g / q
+    QUERY BUDGET CONCEPT: AVERAGING MULTIPLE GRADIENT ESTIMATES
+    
+    This function implements the "averaging" approach to query budget:
+    - For zo_q=1: Standard two-point finite difference (f+ - f-)/2ε
+    - For zo_q>1: Average multiple independent gradient estimates
+    
+    Algorithm for zo_q>1:
+    1. Initialize accumulated_grads = {}
+    2. For each q iteration (q_idx = 0, 1, ..., zo_q-1):
+       a. Generate independent random perturbation UV^T (with fresh seed)
+       b. Compute finite difference: coeff = (f+ - f-)/2ε
+       c. Accumulate: accumulated_grads += coeff * UV^T
+    3. Average: accumulated_grads = accumulated_grads / zo_q
+    4. Return averaged gradient estimates
+    
+    This is DIFFERENT from directional selection (used in DiMeZO/DiLoZO/DiKronZO)
+    where we try multiple directions and SELECT the best one.
+    
+    Args:
+        model: The model to optimize
+        X, Y: Input batch
+        v_dict: Dictionary of V matrices for low-rank updates
+        step: Current step (for V matrix update schedule)
+        zo_random_seed: Base random seed for reproducibility
+        current_rank: Current rank for adaptive rank scheduling
+    
+    Returns:
+        For zo_q=1: (loss, projected_grad, zo_random_seed)
+        For zo_q>1: (first_loss, accumulated_grads_dict, zo_random_seed)
     """
     if current_rank is None:
         current_rank = rank_r  # Use default rank if not specified
@@ -379,6 +525,14 @@ def lowrank_zo_update(model, optimizer, projected_grad, zo_random_seed, v_dict, 
     """
     if current_rank is None:
         current_rank = rank_r  # Use default rank if not specified
+    
+    # Apply gradient clipping to projected gradient (if enabled)
+    if use_zo_clipping:
+        clipped_projected_grad = clip_zo_gradient(projected_grad, max_norm=zo_grad_clip)
+        if zo_verbose_clipping and abs(clipped_projected_grad) != abs(projected_grad) and master_process and step % 100 == 0:
+            print(f"Step {step}: Clipped projected gradient from {projected_grad:.6f} to {clipped_projected_grad:.6f}")
+    else:
+        clipped_projected_grad = projected_grad
         
     torch.manual_seed(zo_random_seed)
     
@@ -409,20 +563,30 @@ def lowrank_zo_update(model, optimizer, projected_grad, zo_random_seed, v_dict, 
             v = v_dict[clean_name]
             u = torch.randn(param.size(0), current_rank, device=param.device, dtype=param.dtype)
             
+            # Compute the parameter update
+            param_update = projected_grad * (u @ v.t())
             is_weight = "bias" not in clean_name and "layer_norm" not in clean_name and "layernorm" not in clean_name
             if is_weight:
-                param.data = param.data - lr * (projected_grad * (u @ v.t()) + weight_decay * param.data)
+                param.data = param.data - lr * (param_update + weight_decay * param.data)
             else:
-                param.data = param.data - lr * (projected_grad * (u @ v.t()))
+                param.data = param.data - lr * param_update
         else:
             # For vectors (biases), use Gaussian update
             z = torch.normal(mean=0, std=1, size=param.size(), device=param.device, dtype=param.dtype)
             
+            # Compute the parameter update
+            param_update = projected_grad * z
             is_weight = "bias" not in clean_name and "layer_norm" not in clean_name and "layernorm" not in clean_name
             if is_weight:
-                param.data = param.data - lr * (projected_grad * z + weight_decay * param.data)
+                param.data = param.data - lr * (param_update + weight_decay * param.data)
             else:
-                param.data = param.data - lr * (projected_grad * z)
+                param.data = param.data - lr * param_update
+            
+            is_weight = "bias" not in clean_name and "layer_norm" not in clean_name and "layernorm" not in clean_name
+            if is_weight:
+                param.data = param.data - lr * (clipped_param_update + weight_decay * param.data)
+            else:
+                param.data = param.data - lr * clipped_param_update
     
     # Only print missing parameters once
     if step == 0 and missing_params and len(missing_params) > 0 and master_process:
@@ -461,7 +625,7 @@ def lowrank_zo_update_direct(model, optimizer, grad_dict, lr, named_parameters_t
             param.data = param.data - lr * grad
 
 # Function to update parameters using LOZO with momentum (LOZO-M)
-def lowrank_zo_update_momentum(model, optimizer, projected_grad, zo_random_seed, v_dict, exp_avg_m, v_old_dict, step, lr, beta1=0.9, named_parameters_to_optim=None, current_rank=None):
+def lowrank_zo_update_momentum(model, optimizer, projected_grad, zo_random_seed, v_dict, exp_avg_m, step, lr, beta1=0.9, named_parameters_to_optim=None, current_rank=None):
     """
     Update model parameters using the LOZO gradient estimate with momentum.
     This is more memory-efficient than standard momentum and can lead to better performance.
@@ -473,7 +637,6 @@ def lowrank_zo_update_momentum(model, optimizer, projected_grad, zo_random_seed,
         zo_random_seed: Random seed for reproducibility
         v_dict: Dictionary of V matrices for low-rank updates
         exp_avg_m: Dictionary of exponential moving average for momentum
-        v_old_dict: Dictionary of old V matrices (from previous step_interval)
         step: Current optimization step
         lr: Learning rate
         beta1: Momentum coefficient (default: 0.9)
@@ -503,59 +666,66 @@ def lowrank_zo_update_momentum(model, optimizer, projected_grad, zo_random_seed,
     
     missing_params = []
     for clean_name, param in named_parameters_to_optim:
+        is_weight = "bias" not in clean_name and "layer_norm" not in clean_name and "layernorm" not in clean_name
+        
+        # Convert to float32 for numerical stability
+        original_dtype = param.data.dtype
+        param_data_float32 = param.data.float()
+        
         if param.ndim >= 2:
             # For matrices, use low-rank update with momentum
             if clean_name not in v_dict:
                 missing_params.append(clean_name)
                 continue
                 
-            v = v_dict[clean_name]
-            u = torch.randn(param.size(0), current_rank, device=param.device, dtype=param.dtype)
+            v = v_dict[clean_name].float()  # Convert V to float32
+            u = torch.randn(param.size(0), current_rank, device=param.device, dtype=torch.float32)
             
-            # Initialize momentum if needed
+            # Compute gradient contribution: g_t = projected_grad * (u @ v.t())
+            g_t = projected_grad * (u @ v.t())
+            
+            # Initialize momentum if needed (same shape as parameter)
             if clean_name not in exp_avg_m:
-                exp_avg_m[clean_name] = torch.zeros_like(u)
+                exp_avg_m[clean_name] = torch.zeros_like(param_data_float32)
             
-            # Update momentum based on step interval
-            if step % step_interval == 0:
-                if clean_name in v_old_dict:   
-                    # Use the transition matrix between old and new V
-                    v_old = v_old_dict[clean_name]
-                    n = v_old.shape[0]  # Use row dimension as in original LOZO
-                    exp_avg_m[clean_name] = beta1 * (exp_avg_m[clean_name] @ v_old.t() @ v / n) + (1 - beta1) * projected_grad * u
-                else:
-                    # First initialization or no old V available
-                    exp_avg_m[clean_name] = projected_grad * u
-            elif step % step_interval == step_interval - 1:
-                # Store old V matrix before it changes in next step
-                v_old_dict[clean_name] = v  # No need for clone() as we only read from it
-                exp_avg_m[clean_name] = beta1 * exp_avg_m[clean_name] + (1 - beta1) * projected_grad * u
-            else:
-                # Regular momentum update
-                exp_avg_m[clean_name] = beta1 * exp_avg_m[clean_name] + (1 - beta1) * projected_grad * u
+            # Update momentum: m_t = β1 * m_{t-1} + (1 - β1) * g_t
+            current_momentum = exp_avg_m[clean_name].float()
+            current_momentum.mul_(beta1).add_(g_t, alpha=1 - beta1)
+            exp_avg_m[clean_name] = current_momentum
             
-            # Apply update
-            is_weight = "bias" not in clean_name and "layer_norm" not in clean_name and "layernorm" not in clean_name
-            if is_weight:
-                param.data = param.data - lr * (exp_avg_m[clean_name] @ v.t() + weight_decay * param.data)
+            # Apply update: θ_t = θ_{t-1} - α * m_t
+            update_val = lr * current_momentum
+            
+            if is_weight and weight_decay > 0:
+                param_data_float32 = param_data_float32 - (update_val + weight_decay * lr * param_data_float32)
             else:
-                param.data = param.data - lr * (exp_avg_m[clean_name] @ v.t())
+                param_data_float32 = param_data_float32 - update_val
         else:
             # For vectors, use Gaussian update with momentum
-            z = torch.normal(mean=0, std=1, size=param.size(), device=param.device, dtype=param.dtype)
+            z = torch.normal(mean=0, std=1, size=param.size(), device=param.device, dtype=torch.float32)
             
-            # Initialize or update momentum
+            # Compute gradient contribution: g_t = projected_grad * z
+            g_t = projected_grad * z
+            
+            # Initialize momentum if needed (same shape as parameter)
             if clean_name not in exp_avg_m:
-                exp_avg_m[clean_name] = projected_grad * z
-            else:
-                exp_avg_m[clean_name] = beta1 * exp_avg_m[clean_name] + (1 - beta1) * projected_grad * z
+                exp_avg_m[clean_name] = torch.zeros_like(param_data_float32)
             
-            # Apply update
-            is_weight = "bias" not in clean_name and "layer_norm" not in clean_name and "layernorm" not in clean_name
-            if is_weight:
-                param.data = param.data - lr * (exp_avg_m[clean_name] + weight_decay * param.data)
+            # Update momentum: m_t = β1 * m_{t-1} + (1 - β1) * g_t
+            current_momentum = exp_avg_m[clean_name].float()
+            current_momentum.mul_(beta1).add_(g_t, alpha=1 - beta1)
+            exp_avg_m[clean_name] = current_momentum
+            
+            # Apply update: θ_t = θ_{t-1} - α * m_t
+            update_val = lr * current_momentum
+            
+            if is_weight and weight_decay > 0:
+                param_data_float32 = param_data_float32 - (update_val + weight_decay * lr * param_data_float32)
             else:
-                param.data = param.data - lr * exp_avg_m[clean_name]
+                param_data_float32 = param_data_float32 - update_val
+        
+        # Convert back to original dtype
+        param.data = param_data_float32.to(original_dtype)
     
     # Only print missing parameters once
     if step == 0 and missing_params and len(missing_params) > 0 and master_process:
@@ -741,15 +911,34 @@ def svdlozo_step(model, X, Y, step, zo_random_seed):
     """
     Estimate gradient using SVD-LOZO with q-times finite differences.
     
-    For q>1:
-    1. Initialize gradient accumulator
-    2. For each q iteration:
-       - Generate SVD-guided perturbation
-       - Compute (f+ - f-)/2*zo_eps  
-       - Accumulate: g += (scalar coefficient) * SVD_perturbation
-    3. Average: g = g / q
+    QUERY BUDGET CONCEPT: AVERAGING MULTIPLE GRADIENT ESTIMATES
+    
+    This function implements the "averaging" approach to query budget:
+    - For zo_q=1: Standard two-point finite difference (f+ - f-)/2ε
+    - For zo_q>1: Average multiple independent gradient estimates
+    
+    Algorithm for zo_q>1:
+    1. Initialize accumulated_grads = {}
+    2. For each q iteration (q_idx = 0, 1, ..., zo_q-1):
+       a. Generate independent SVD-guided perturbation (with fresh seed)
+       b. Compute finite difference: coeff = (f+ - f-)/2ε
+       c. Accumulate: accumulated_grads += coeff * SVD_perturbation
+    3. Average: accumulated_grads = accumulated_grads / zo_q
+    4. Return averaged gradient estimates
+    
+    This is DIFFERENT from directional selection (used in DiMeZO/DiLoZO/DiKronZO)
+    where we try multiple directions and SELECT the best one.
+    
+    Args:
+        model: The model to optimize
+        X, Y: Input batch
+        step: Current step (for debug output control)
+        zo_random_seed: Base random seed for reproducibility
+    
+    Returns:
+        For zo_q=1: (loss, projected_grad, named_params)
+        For zo_q>1: (first_loss, accumulated_grads_dict, params_to_optimize)
     """
-    # If q=1, use the original implementation for maximum compatibility
     if zo_q == 1:
         # First function evaluation - only show debug on first call of each step
         named_params = svdlozo_perturb_parameters(model, zo_random_seed, step, scaling_factor=1, debug_output=True)
@@ -961,6 +1150,10 @@ def svdlozo_update_direct(model, optimizer, grad_dict, lr, named_parameters_to_o
         else:
             param.data = param.data - lr * grad
 
+# -----------------------------------------------------------------------------
+# DiMeZO (Directional MeZO) specific functions
+# -----------------------------------------------------------------------------
+
 # Function to perturb parameters with standard Gaussian perturbation (for MeZO)
 def mezo_perturb_parameters(model, zo_random_seed, scaling_factor=1):
     """
@@ -985,27 +1178,133 @@ def mezo_perturb_parameters(model, zo_random_seed, scaling_factor=1):
     
     return named_parameters_to_optim
 
-# Function to estimate gradient using MeZO
 def mezo_step(model, X, Y, step, zo_random_seed):
     """
     Estimate gradient using MeZO (Memory-efficient Zero-Order optimization).
-    Return the loss from f(theta + z).
-    """
-    # First function evaluation
-    named_params = mezo_perturb_parameters(model, zo_random_seed, scaling_factor=1)
-    loss1 = zo_forward(model, X, Y)
-
-    # Second function evaluation
-    mezo_perturb_parameters(model, zo_random_seed, scaling_factor=-2)
-    loss2 = zo_forward(model, X, Y)
-
-    # Calculate projected gradient
-    projected_grad = ((loss1 - loss2) / (2 * zo_eps)).item()
-
-    # Reset model back to its parameters at start of step
-    mezo_perturb_parameters(model, zo_random_seed, scaling_factor=1)
     
-    return loss1, projected_grad, named_params
+    QUERY BUDGET CONCEPT: AVERAGING MULTIPLE GRADIENT ESTIMATES (NOW SUPPORTS q>1)
+    
+    This function implements both:
+    - For zo_q=1: Standard two-point finite difference (f+ - f-)/2ε
+    - For zo_q>1: Average multiple independent gradient estimates
+    
+    Algorithm for zo_q>1:
+    1. Initialize accumulated_grads = {}
+    2. For each q iteration (q_idx = 0, 1, ..., zo_q-1):
+       a. Generate independent Gaussian perturbation (with fresh seed)
+       b. Compute finite difference: coeff = (f+ - f-)/2ε
+       c. Accumulate: accumulated_grads += coeff * Gaussian_perturbation
+    3. Average: accumulated_grads = accumulated_grads / zo_q
+    4. Return averaged gradient estimates
+    
+    This is DIFFERENT from directional selection (used in DiMeZO)
+    where we try multiple directions and SELECT the best one.
+    
+    Args:
+        model: The model to optimize
+        X, Y: Input batch
+        step: Current step (for debugging)
+        zo_random_seed: Base random seed for reproducibility
+    
+    Returns:
+        For zo_q=1: (loss, projected_grad, named_params)
+        For zo_q>1: (first_loss, accumulated_grads_dict, params_to_optimize)
+    """
+    if zo_q == 1:
+        # Original implementation for q=1
+        # First function evaluation
+        named_params = mezo_perturb_parameters(model, zo_random_seed, scaling_factor=1)
+        loss1 = zo_forward(model, X, Y)
+
+        # Second function evaluation
+        mezo_perturb_parameters(model, zo_random_seed, scaling_factor=-2)
+        loss2 = zo_forward(model, X, Y)
+
+        # Calculate projected gradient
+        projected_grad = ((loss1 - loss2) / (2 * zo_eps)).item()
+
+        # Reset model back to its parameters at start of step
+        mezo_perturb_parameters(model, zo_random_seed, scaling_factor=1)
+        
+        return loss1, projected_grad, named_params
+    
+    # For q>1, implement the multiple estimation approach
+    # Initialize an empty gradient accumulator for each parameter
+    accumulated_grads = {}
+    first_loss = None
+    
+    # Create a list of parameters to optimize
+    params_to_optimize = []
+    for name, param in model.named_parameters():
+        if param.requires_grad:
+            clean_name = name
+            if name.startswith('_orig_mod.'):
+                clean_name = name[len('_orig_mod.'):]
+            params_to_optimize.append((clean_name, param))
+    
+    # For each q estimation
+    for q_idx in range(zo_q):
+        # Sample a new random seed for this estimation
+        current_zo_seed = np.random.randint(1000000000) if q_idx > 0 else zo_random_seed
+        torch.manual_seed(current_zo_seed)
+        
+        # Generate Gaussian perturbations for each parameter
+        perturbations = {}  # Store the perturbations for this iteration
+        
+        for clean_name, param in params_to_optimize:
+            # For all parameters, use Gaussian perturbation (MeZO approach)
+            z = torch.normal(mean=0, std=1, size=param.size(), device=param.device, dtype=param.dtype)
+            perturbations[clean_name] = z
+            
+            # Apply positive perturbation
+            param.data = param.data + z * zo_eps
+        
+        # Evaluate f(θ + perturbation)
+        f_plus = zo_forward(model, X, Y)
+        
+        # Save first loss for reporting
+        if q_idx == 0:
+            first_loss = f_plus
+        
+        # Apply negative perturbation (from current state)
+        for clean_name, param in params_to_optimize:
+            if clean_name in perturbations:
+                perturbation = perturbations[clean_name]
+                param.data = param.data - 2 * perturbation * zo_eps
+        
+        # Evaluate f(θ - perturbation)
+        f_minus = zo_forward(model, X, Y)
+        
+        # Compute scalar coefficient
+        coeff = (f_plus - f_minus).item() / (2 * zo_eps)
+        
+        # Accumulate gradients for each parameter
+        for clean_name, param in params_to_optimize:
+            if clean_name in perturbations:
+                perturbation = perturbations[clean_name]
+                
+                # Calculate gradient for this parameter
+                grad = coeff * perturbation
+                
+                # Add to accumulated gradients
+                if clean_name not in accumulated_grads:
+                    accumulated_grads[clean_name] = grad
+                else:
+                    accumulated_grads[clean_name] += grad
+        
+        # Reset parameters to their original values
+        for clean_name, param in params_to_optimize:
+            if clean_name in perturbations:
+                perturbation = perturbations[clean_name]
+                param.data = param.data + perturbation * zo_eps
+    
+    # Average the gradients if q > 1
+    if zo_q > 1:
+        for clean_name in accumulated_grads:
+            accumulated_grads[clean_name] = accumulated_grads[clean_name] / zo_q
+    
+    # Return the first loss and accumulated gradients
+    return first_loss, accumulated_grads, params_to_optimize
 
 # Function to update parameters using MeZO
 def mezo_update(model, optimizer, projected_grad, zo_random_seed, step, lr, named_parameters_to_optim=None):
@@ -1089,6 +1388,37 @@ def mezo_update_momentum(model, optimizer, projected_grad, zo_random_seed, exp_a
         else:
             param.data = param.data - lr * exp_avg_m[clean_name]
 
+# Function to update parameters using MeZO with direct gradient dictionary
+def mezo_update_direct(model, optimizer, grad_dict, lr, named_parameters_to_optim=None):
+    """
+    Update model parameters using the pre-computed gradient dictionary from q-times MeZO estimation.
+    """
+    # If named_parameters_to_optim is not provided, create it
+    if named_parameters_to_optim is None:
+        named_parameters_to_optim = []
+        for name, param in model.named_parameters():
+            if param.requires_grad:
+                clean_name = name
+                if name.startswith('_orig_mod.'):
+                    clean_name = name[len('_orig_mod.'):]
+                named_parameters_to_optim.append((clean_name, param))
+    
+    # Apply the gradient update to each parameter
+    for clean_name, param in named_parameters_to_optim:
+        # Skip parameters not in gradient dictionary
+        if clean_name not in grad_dict:
+            continue
+        
+        # Get the gradient for this parameter
+        grad = grad_dict[clean_name]
+        
+        # Apply update with or without weight decay
+        is_weight = "bias" not in clean_name and "layer_norm" not in clean_name and "layernorm" not in clean_name
+        if is_weight:
+            param.data = param.data - lr * (grad + weight_decay * param.data)
+        else:
+            param.data = param.data - lr * grad
+
 # -----------------------------------------------------------------------------
 # DiMeZO (Directional MeZO) specific functions
 # -----------------------------------------------------------------------------
@@ -1125,9 +1455,19 @@ def dimezo_step(model, X, Y, step, zo_random_seed, directional_q=None, eps=None,
     """
     Estimate gradient using DiMeZO (Directional MeZO) with directional selection.
     
+    QUERY BUDGET CONCEPT: DIRECTIONAL SELECTION (CHOOSE BEST DIRECTION)
+    
+    This function implements the "directional selection" approach to query budget:
+    - Try directional_q different random directions
+    - SELECT the direction that gives the lowest loss
+    - Either move directly in that direction OR estimate gradient along it
+    
+    This is DIFFERENT from averaging (used in LoZO/SVD-LoZO/MeZO with zo_q>1)
+    where we average multiple independent gradient estimates.
+    
     Algorithm:
     1. Compute baseline loss: f(θ)
-    2. Sample q random directions z_1, ..., z_q
+    2. Sample directional_q random directions z_1, ..., z_directional_q
     3. Evaluate f(θ + ε*z_i) for each direction i
     4. Select z_best = argmin_zi f(θ + ε*z_i) (direction that gives lowest loss)
     5. Success = min_loss < baseline_loss
@@ -1166,7 +1506,7 @@ def dimezo_step(model, X, Y, step, zo_random_seed, directional_q=None, eps=None,
     best_direction = None
     
     # Debug info for first few steps
-    if step <= 2 and master_process:
+    if step <= 2 and master_process and zo_verbose_debug:
         mode_str = "Direct Movement" if direct_movement else "Gradient Estimation"
         print(f"DiMeZO ({mode_str}): Baseline loss {baseline_loss:.4f}, trying q={current_directional_q} directions, eps={eps:.2e}")
     
@@ -1224,7 +1564,7 @@ def dimezo_step(model, X, Y, step, zo_random_seed, directional_q=None, eps=None,
         dimezo_perturb_parameters(model, best_seed, scaling_factor=1, eps=eps)
     
     # Debug info for first few steps
-    if step <= 2 and master_process:
+    if step <= 2 and master_process and zo_verbose_debug:
         success_str = "SUCCESS" if success else "FAILURE"
         if direct_movement:
             print(f"DiMeZO: Best loss {best_loss:.4f} vs baseline {baseline_loss:.4f} -> {success_str} (returning direction)")
@@ -1244,7 +1584,7 @@ def dimezo_update(model, optimizer, gradient_or_direction, best_seed, step, lr, 
        
     2. Gradient Descent (direct_movement=False):
        θ ← θ - α * c * Z_best where c = ∇f(θ) · Z_best (directional derivative)
-       Since Z_best is selected to decrease loss, c < 0, so this becomes:
+       Since Z_best decreases loss, c < 0, so this becomes:
        θ ← θ + α * |c| * Z_best
        This is standard gradient descent with adaptive step size |c|.
     
@@ -1313,6 +1653,7 @@ def dilozo_perturb_parameters(model, v_dict, u_seed, step, scaling_factor=1, eps
     """Perturb model parameters with U_seed V^T for DiLoZO.
     V matrices are handled similarly to LOZO (updated every step_interval).
     U matrix is generated based on u_seed.
+    Supports adaptive rank by extending/truncating V matrices when needed.
     """ 
     if eps is None:
         eps = zo_eps # Use global zo_eps if not provided
@@ -1334,15 +1675,30 @@ def dilozo_perturb_parameters(model, v_dict, u_seed, step, scaling_factor=1, eps
     for clean_name, param in named_parameters_to_optim:
         if param.ndim >= 2:
             # For matrices, use low-rank perturbation U V^T
-            need_new_v = (step % step_interval == 0 or
-                          clean_name not in v_dict or
-                          v_dict[clean_name].size(1) != current_rank) # Rank changed
+            need_new_v = (step % step_interval == 0 or clean_name not in v_dict)
+            rank_changed = (clean_name in v_dict and v_dict[clean_name].size(1) != current_rank)
             
             if need_new_v:
-                # Ensure v has the correct dimensions, especially for the second dimension (rank)
+                # Create completely new V matrix
                 v = torch.randn(param.size(1), int(current_rank), device=param.device, dtype=param.dtype)
                 v_dict[clean_name] = v
+            elif rank_changed:
+                # Rank changed: extend or truncate existing V matrix
+                old_v = v_dict[clean_name]
+                old_rank = old_v.size(1)
+                
+                if current_rank > old_rank:
+                    # Extend V matrix: keep existing columns and add new random columns
+                    new_cols = torch.randn(param.size(1), int(current_rank) - old_rank, 
+                                         device=param.device, dtype=param.dtype)
+                    v = torch.cat([old_v, new_cols], dim=1)
+                    v_dict[clean_name] = v
+                else:
+                    # Truncate V matrix: keep only the first current_rank columns
+                    v = old_v[:, :int(current_rank)].contiguous()
+                    v_dict[clean_name] = v
             else:
+                # Use existing V matrix
                 v = v_dict[clean_name]
             
             # Ensure u has the correct dimensions
@@ -1385,7 +1741,7 @@ def dilozo_step(model, X, Y, v_dict, step, zo_random_seed, directional_q=None, e
     best_loss_val = float('inf')
     best_u_seed = None
 
-    if step <= 2 and master_process:
+    if step <= 2 and master_process and zo_verbose_debug:
         print(f"DiLoZO: Baseline loss {baseline_loss:.4f}, trying q={current_directional_q} directions, eps={eps:.2e}, rank={current_rank}")
 
     for i in range(current_directional_q):
@@ -1402,7 +1758,7 @@ def dilozo_step(model, X, Y, v_dict, step, zo_random_seed, directional_q=None, e
 
     # If no direction improved, best_u_seed might be None. Handle this.
     if best_u_seed is None: # This can happen if all directions yield worse or equal loss
-        if master_process:
+        if master_process and zo_verbose_debug:
             print(f"DiLoZO Step: No improving direction found out of {current_directional_q}. Using first direction's seed for grad_coeff calculation.")
         best_u_seed = zo_random_seed # Fallback to the first seed
 
@@ -1424,12 +1780,11 @@ def dilozo_step(model, X, Y, v_dict, step, zo_random_seed, directional_q=None, e
     # We are currently at (theta - eps*UVT). Add back 1*eps*UVT to get to theta
     dilozo_perturb_parameters(model, v_dict, best_u_seed, step, scaling_factor=1, eps=eps, current_rank=current_rank)
 
-    if step <= 2 and master_process:
+    if step <= 2 and master_process and zo_verbose_debug:
         success_str = "SUCCESS" if success else "FAILURE"
         print(f"DiLoZO: f+ {f_plus:.4f}, f- {f_minus:.4f}. Best loss {best_loss_val:.4f} vs baseline {baseline_loss:.4f} -> {success_str} (grad_coeff {grad_coeff:.6f})")
 
     return best_loss_val, grad_coeff, best_u_seed, success
-
 def dilozo_update(model, optimizer, grad_coeff, best_u_seed, v_dict, step, lr, named_parameters_to_optim=None, current_rank=None):
     """Update model parameters using DiLoZO.
     
@@ -1455,7 +1810,7 @@ def dilozo_update(model, optimizer, grad_coeff, best_u_seed, v_dict, step, lr, n
                                      for name, param in model.named_parameters() if param.requires_grad]
 
 
-    if step <= 2 and master_process:
+    if step <= 2 and master_process and zo_verbose_debug:
         print(f"DiLoZO Update: {len(named_parameters_to_optim)} parameters, rank={current_rank}, lr={lr:.2e}")
 
     effective_lr = lr / current_rank
@@ -1516,7 +1871,7 @@ def dilozo_update_momentum(model, optimizer, grad_coeff, best_u_seed, v_dict, ex
         named_parameters_to_optim = [(name if not name.startswith('_orig_mod.') else name[len('_orig_mod.'):], param)
                                      for name, param in model.named_parameters() if param.requires_grad]
 
-    if step <= 2 and master_process:
+    if step <= 2 and master_process and zo_verbose_debug:
         print(f"DiLoZO Momentum Update: {len(named_parameters_to_optim)} parameters, rank={current_rank}, lr={lr:.2e}, beta1={beta1}")
 
     # For matrix parameters, g_t is scaled by 1/rank. For vector parameters, effectively rank=1.
@@ -1564,119 +1919,150 @@ def find_closest_divisor(n, target):
     divisors = [i for i in range(1, n+1) if n % i == 0]
     return min(divisors, key=lambda x: abs(x - target))
 
-def choose_kron_dims_approx_square(d_out: int, d_in: int):
-    """
-    Retourne (m1, m2, n1, n2) avec
-        m1 * m2 = d_out   et   n1 * n2 = d_in
-    en privilégiant des facteurs proches des racines carrées.
+def choose_kron_dims_approx_square(d_out, d_in):
+    """Choose Kronecker factorization dimensions close to square roots
+    
+    For torch.kron(A, B) where A is (m1, n1) and B is (m2, n2),
+    the result has shape (m1*m2, n1*n2).
+    So we need: m1*m2 = d_out and n1*n2 = d_in
     """
     import math
-
-    def best_pair(n: int):
-        root = int(math.sqrt(n))
-        for off in range(root + 1):
-            for cand in (root - off, root + off):
-                if cand >= 1 and n % cand == 0:
-                    return cand, n // cand
-        return 1, n  # n est premier : décomposition triviale
-
-    m1, m2 = best_pair(d_out)   # lignes
-    n1, n2 = best_pair(d_in)    # colonnes
-    return m1, m2, n1, n2
-
-def choose_kron_dims_fixed_factor(d_out: int, d_in: int, max_factor: int = 32):
-    """
-    Variante “facteur borné” : chaque premier facteur ≤ max_factor.
-    """
-    out_f = [i for i in range(1, min(max_factor + 1, d_out + 1)) if d_out % i == 0]
-    m1 = max(out_f) if out_f else 1
+    
+    # Find factors closest to square roots
+    target_out = int(math.sqrt(d_out))
+    target_in = int(math.sqrt(d_in))
+    
+    # Find divisors closest to targets for d_out and d_in
+    m1 = find_closest_divisor(d_out, target_out)
     m2 = d_out // m1
-
-    in_f = [i for i in range(1, min(max_factor + 1, d_in + 1)) if d_in % i == 0]
-    n1 = max(in_f) if in_f else 1
+    
+    n1 = find_closest_divisor(d_in, target_in)
     n2 = d_in // n1
+    
+    return m1, n1, m2, n2
 
-    return m1, m2, n1, n2
+def choose_kron_dims_fixed_factor(d_out, d_in, max_factor=32):
+    """Choose Kronecker factorization with factors ≤ max_factor
+    
+    For torch.kron(A, B) where A is (m1, n1) and B is (m2, n2),
+    the result has shape (m1*m2, n1*n2).
+    So we need: m1*m2 = d_out and n1*n2 = d_in
+    """
+    # For d_out: find m1 ≤ max_factor such that d_out % m1 == 0
+    out_factors = [i for i in range(1, min(max_factor+1, d_out+1)) if d_out % i == 0]
+    m1 = max(out_factors) if out_factors else 1  # Largest factor ≤ max_factor
+    m2 = d_out // m1
+    
+    # For d_in: find n1 ≤ max_factor such that d_in % n1 == 0  
+    in_factors = [i for i in range(1, min(max_factor+1, d_in+1)) if d_in % i == 0]
+    n1 = max(in_factors) if in_factors else 1
+    n2 = d_in // n1
+    
+    return m1, n1, m2, n2
 
-def choose_kron_dims_power2(d_out: int, d_in: int):
+def choose_kron_dims_power2(d_out, d_in):
+    """Choose Kronecker factorization using largest power-of-2 divisors
+    
+    For torch.kron(A, B) where A is (m1, n1) and B is (m2, n2),
+    the result has shape (m1*m2, n1*n2).
+    So we need: m1*m2 = d_out and n1*n2 = d_in
     """
-    Produit de puissances de 2 maximales.
-    """
-    def largest_pow2_divisor(n: int):
+    def largest_power2_divisor(n):
         if n == 0:
             return 1
-        p = 1
-        while n % (p << 1) == 0:
-            p <<= 1
-        return p
-
-    m1 = largest_pow2_divisor(d_out)
+        power = 0
+        while n % (2 ** (power + 1)) == 0:
+            power += 1
+        return 2 ** power
+    
+    m1 = largest_power2_divisor(d_out)
     m2 = d_out // m1
-    n1 = largest_pow2_divisor(d_in)
+    
+    n1 = largest_power2_divisor(d_in)
     n2 = d_in // n1
-    return m1, m2, n1, n2
+    
+    return m1, n1, m2, n2
 
-def choose_kron_dims(d_out: int, d_in: int, strategy: str = "approx_square", max_factor: int = 32):
-    if strategy == "approx_square":
+def choose_kron_dims(d_out, d_in, strategy='approx_square', max_factor=32):
+    """Choose Kronecker factorization dimensions based on strategy"""
+    if strategy == 'approx_square':
         return choose_kron_dims_approx_square(d_out, d_in)
-    if strategy == "fixed_factor":
+    elif strategy == 'fixed_factor':
         return choose_kron_dims_fixed_factor(d_out, d_in, max_factor)
-    if strategy == "power2":
+    elif strategy == 'power2':
         return choose_kron_dims_power2(d_out, d_in)
-    raise ValueError(f"Unknown Kronecker strategy: {strategy}")
+    else:
+        raise ValueError(f"Unknown Kronecker strategy: {strategy}")
 
-def kronzo_perturb_parameters(model,
-                              zo_random_seed: int,
-                              step: int,
-                              scaling_factor: float = 1.0,
-                              eps: float | None = None,
-                              strategy: str = "approx_square",
-                              max_factor: int = 32):
+def kronzo_perturb_parameters(model, b_dict, zo_random_seed, step, scaling_factor=1, eps=None, strategy='approx_square', max_factor=32, step_interval=50):
     """
-    Applique une perturbation de type Kronecker (ou gaussienne pour les vecteurs)
-    sur tous les paramètres entraînables du modèle.
-    Retourne la liste (name, param) des paramètres perturbés.
+    Perturb model parameters using Kronecker product structure A ⊗ B.
+    Following LoZO pattern: B matrices are kept constant for step_interval steps, A matrices are sampled fresh.
+    
+    For each matrix parameter W ∈ ℝ^(d_out × d_in), we:
+    1. Choose factorization dimensions: m1×m2 = d_out, n1×n2 = d_in
+    2. Keep B ∈ ℝ^(m2×n2) constant for step_interval steps
+    3. Sample A ∈ ℝ^(m1×n1) fresh at each step
+    4. Compute perturbation: ΔW = A ⊗ B
     """
     if eps is None:
-        eps = zo_eps  # variable globale
-
+        eps = zo_eps  # Use global zo_eps if not provided
+        
     torch.manual_seed(zo_random_seed)
-
-    # Prépare la liste des paramètres à optimiser
-    named_parameters_to_optim: list[tuple[str, torch.Tensor]] = []
+    
+    # Create a list of named parameters to optimize
+    named_parameters_to_optim = []
     for name, param in model.named_parameters():
         if param.requires_grad:
-            clean = name[len("_orig_mod."):] if name.startswith("_orig_mod.") else name
-            named_parameters_to_optim.append((clean, param))
-
-    # Applique la perturbation
+            # Handle _orig_mod prefix from torch.compile
+            clean_name = name
+            if name.startswith('_orig_mod.'):
+                clean_name = name[len('_orig_mod.'):]
+            named_parameters_to_optim.append((clean_name, param))
+    
     for clean_name, param in named_parameters_to_optim:
-        if param.ndim >= 2:                          # --- matrices
+        if param.ndim >= 2:
+            # For matrices, use Kronecker product perturbation
             d_out, d_in = param.shape
-            m1, m2, n1, n2 = choose_kron_dims(d_out, d_in, strategy, max_factor)
-
+            
+            # Choose Kronecker factorization dimensions
+            m1, n1, m2, n2 = choose_kron_dims(d_out, d_in, strategy, max_factor)
+            
+            # Create new B matrix at the specified interval or if not present
+            need_new_b = (step % step_interval == 0 or 
+                         clean_name not in b_dict)
+            
+            if need_new_b:
+                B = torch.randn(m2, n2, device=param.device, dtype=param.dtype)
+                b_dict[clean_name] = B
+            else:
+                B = b_dict[clean_name]
+            
+            # Always sample A fresh at each step
             A = torch.randn(m1, n1, device=param.device, dtype=param.dtype)
-            B = torch.randn(m2, n2, device=param.device, dtype=param.dtype)
-            perturbation = torch.kron(A, B)          # (d_out, d_in)
-
-            param.data.add_(scaling_factor * perturbation * eps)
-        else:                                        # --- vecteurs / biais
-            z = torch.normal(0.0, 1.0,
-                             size=param.size(),
-                             device=param.device,
-                             dtype=param.dtype)
-            param.data.add_(scaling_factor * z * eps)
-
+            
+            # Compute Kronecker product A ⊗ B
+            perturbation = torch.kron(A, B)
+            
+            # Apply perturbation
+            param.data = param.data + scaling_factor * perturbation * eps
+        else:
+            # For vectors (biases), use Gaussian perturbation
+            z = torch.normal(mean=0, std=1, size=param.size(), device=param.device, dtype=param.dtype)
+            param.data = param.data + scaling_factor * z * eps
+    
     return named_parameters_to_optim
 
-def kronzo_step(model, X, Y, step, zo_random_seed, strategy='approx_square', max_factor=32, eps=None):
+def kronzo_step(model, X, Y, b_dict, step, zo_random_seed, strategy='approx_square', max_factor=32, eps=None, step_interval=50):
     """
     Estimate gradient using KronZO (Kronecker Zero-Order optimization).
+    Following LoZO pattern: B matrices constant for step_interval steps, A matrices fresh.
     
     Algorithm:
     1. For each matrix parameter W ∈ ℝ^(d_out × d_in):
-       - Choose factorization: m1×n1 = d_out, m2×n2 = d_in  
-       - Sample A ∈ ℝ^(m1×n1), B ∈ ℝ^(m2×n2)
+       - Choose factorization: m1×m2 = d_out, n1×n2 = d_in  
+       - Keep B ∈ ℝ^(m2×n2) constant for step_interval steps
+       - Sample A ∈ ℝ^(m1×n1) fresh at each step
        - Perturbation: ΔW = A ⊗ B (Kronecker product)
     2. Compute finite difference: c = [f(θ + ε*ΔW) - f(θ - ε*ΔW)]/(2ε)
     3. This gives projected gradient ∇f(θ) · ΔW along Kronecker direction
@@ -1684,11 +2070,13 @@ def kronzo_step(model, X, Y, step, zo_random_seed, strategy='approx_square', max
     Args:
         model: The model to optimize
         X, Y: Input batch
-        step: Current step (for debugging)
+        b_dict: Dictionary storing B matrices for each parameter
+        step: Current step (for B matrix update schedule)
         zo_random_seed: Random seed for reproducibility
         strategy: Kronecker factorization strategy ('approx_square', 'fixed_factor', 'power2')
         max_factor: Maximum factor size for 'fixed_factor' strategy
         eps: Perturbation size (uses global zo_eps if None)
+        step_interval: Interval for updating B matrices
     
     Returns:
         loss: Loss from f(θ + ε*ΔW)
@@ -1699,279 +2087,500 @@ def kronzo_step(model, X, Y, step, zo_random_seed, strategy='approx_square', max
         eps = zo_eps  # Use global zo_eps if not provided
     
     # First function evaluation: f(θ + ε*ΔW)
-    named_params = kronzo_perturb_parameters(model, zo_random_seed, step, scaling_factor=1, eps=eps, strategy=strategy, max_factor=max_factor)
+    named_params = kronzo_perturb_parameters(model, b_dict, zo_random_seed, step, scaling_factor=1, eps=eps, strategy=strategy, max_factor=max_factor, step_interval=step_interval)
     loss1 = zo_forward(model, X, Y)
 
     # Second function evaluation: f(θ - ε*ΔW)
-    kronzo_perturb_parameters(model, zo_random_seed, step, scaling_factor=-2, eps=eps, strategy=strategy, max_factor=max_factor)
+    kronzo_perturb_parameters(model, b_dict, zo_random_seed, step, scaling_factor=-2, eps=eps, strategy=strategy, max_factor=max_factor, step_interval=step_interval)
     loss2 = zo_forward(model, X, Y)
 
     # Calculate projected gradient: c = [f(θ + ε*ΔW) - f(θ - ε*ΔW)]/(2ε)
     projected_grad = ((loss1 - loss2) / (2 * eps)).item()
 
     # Reset model back to original parameters: θ
-    kronzo_perturb_parameters(model, zo_random_seed, step, scaling_factor=1, eps=eps, strategy=strategy, max_factor=max_factor)
+    kronzo_perturb_parameters(model, b_dict, zo_random_seed, step, scaling_factor=1, eps=eps, strategy=strategy, max_factor=max_factor, step_interval=step_interval)
     
     return loss1, projected_grad, named_params
 
-def kronzo_update(model,
-                  optimizer,                      # conservé pour compatibilité API
-                  projected_grad: float,
-                  zo_random_seed: int,
-                  step: int,
-                  lr: float,
-                  named_parameters_to_optim: list[tuple[str, torch.Tensor]] | None = None,
-                  strategy: str = "approx_square",
-                  max_factor: int = 32):
+def kronzo_update(model, optimizer, projected_grad, zo_random_seed, b_dict, step, lr, named_parameters_to_optim=None, strategy='approx_square', max_factor=32, step_interval=50):
     """
-    Met à jour les paramètres : θ ← θ − lr · c · ΔW
-    """
-    torch.manual_seed(zo_random_seed)
-
-    if named_parameters_to_optim is None:
-        named_parameters_to_optim = [(n if not n.startswith("_orig_mod.") else n[10:], p)
-                                     for n, p in model.named_parameters()
-                                     if p.requires_grad]
-
-    for clean_name, param in named_parameters_to_optim:
-        if param.ndim >= 2:                          # --- matrices
-            d_out, d_in = param.shape
-            m1, m2, n1, n2 = choose_kron_dims(d_out, d_in, strategy, max_factor)
-
-            A = torch.randn(m1, n1, device=param.device, dtype=param.dtype)
-            B = torch.randn(m2, n2, device=param.device, dtype=param.dtype)
-            perturbation = torch.kron(A, B)
-
-            is_weight = ("bias" not in clean_name
-                         and "layer_norm" not in clean_name
-                         and "layernorm" not in clean_name)
-
-            if is_weight:
-                param.data.sub_(lr * (projected_grad * perturbation +
-                                      weight_decay * param.data))
-            else:
-                param.data.sub_(lr * projected_grad * perturbation)
-        else:                                        # --- vecteurs
-            z = torch.normal(0.0, 1.0,
-                             size=param.size(),
-                             device=param.device,
-                             dtype=param.dtype)
-
-            is_weight = ("bias" not in clean_name
-                         and "layer_norm" not in clean_name
-                         and "layernorm" not in clean_name)
-
-            if is_weight:
-                param.data.sub_(lr * (projected_grad * z +
-                                      weight_decay * param.data))
-            else:
-                param.data.sub_(lr * projected_grad * z)
-
-def kronzo_update_momentum(model,
-                            optimizer,              # conservé pour compatibilité API
-                            projected_grad: float,
-                            zo_random_seed: int,
-                            exp_avg_m: dict[str, torch.Tensor],
-                            step: int,
-                            lr: float,
-                            beta1: float = 0.9,
-                            named_parameters_to_optim: list[tuple[str, torch.Tensor]] | None = None,
-                            strategy: str = "approx_square",
-                            max_factor: int = 32):
-    """
-    Mise à jour avec momentum : m_t = β₁ m_{t−1} + (1−β₁) g_t
-                               θ   = θ − lr · m_t
+    Update model parameters using KronZO gradient estimate.
+    Following LoZO pattern: B matrices constant for step_interval steps, A matrices fresh.
+    
+    Update rule: θ ← θ - α * c * ΔW
+    where ΔW = A ⊗ B is the Kronecker product perturbation
+    and c is the projected gradient coefficient
+    
+    Args:
+        model: The model to update
+        optimizer: The optimizer (not directly used but kept for API consistency)
+        projected_grad: The projected gradient coefficient c
+        zo_random_seed: Random seed for reproducibility
+        b_dict: Dictionary storing B matrices for each parameter
+        step: Current optimization step
+        lr: Learning rate
+        named_parameters_to_optim: List of (name, parameter) tuples to optimize
+        strategy: Kronecker factorization strategy
+        max_factor: Maximum factor size for 'fixed_factor' strategy
+        step_interval: Interval for updating B matrices
     """
     torch.manual_seed(zo_random_seed)
-
+    
+    # If named_parameters_to_optim is not provided, create it
     if named_parameters_to_optim is None:
-        named_parameters_to_optim = [(n if not n.startswith("_orig_mod.") else n[10:], p)
-                                     for n, p in model.named_parameters()
-                                     if p.requires_grad]
-
+        named_parameters_to_optim = []
+        for name, param in model.named_parameters():
+            if param.requires_grad:
+                clean_name = name
+                if name.startswith('_orig_mod.'):
+                    clean_name = name[len('_orig_mod.'):]
+                named_parameters_to_optim.append((clean_name, param))
+    
+    # Debug logging only on first step
+    if step == 0 and master_process:
+        print(f"KronZO Update: {len(named_parameters_to_optim)} parameters, strategy={strategy}, max_factor={max_factor}, step_interval={step_interval}")
+        
+        # Show storage statistics for first few parameters
+        total_original = 0
+        total_kronecker = 0
+        examples = []
+        
+        for i, (clean_name, param) in enumerate(named_parameters_to_optim[:5]):  # First 5 parameters
+            if param.ndim >= 2:
+                d_out, d_in = param.shape
+                original_storage = d_out * d_in
+                
+                m1, n1, m2, n2 = choose_kron_dims(d_out, d_in, strategy, max_factor)
+                kronecker_storage = m1 * n1 + m2 * n2
+                
+                total_original += original_storage
+                total_kronecker += kronecker_storage
+                
+                compression_ratio = kronecker_storage / original_storage
+                examples.append({
+                    'name': clean_name,
+                    'shape': (d_out, d_in),
+                    'factors': f"A({m1}×{n1}) ⊗ B({m2}×{n2})",
+                    'compression': f"{compression_ratio:.3f}"
+                })
+        
+        if examples:
+            print(f"KronZO Storage Examples:")
+            for ex in examples:
+                print(f"  {ex['name']}: {ex['shape']} → {ex['factors']}, compression: {ex['compression']}")
+            
+            overall_compression = total_kronecker / total_original if total_original > 0 else 0
+            print(f"  Overall compression ratio: {overall_compression:.3f}")
+    
     for clean_name, param in named_parameters_to_optim:
-        if param.ndim >= 2:                          # --- matrices
+        if param.ndim >= 2:
+            # For matrices, reproduce the same Kronecker perturbation
             d_out, d_in = param.shape
-            m1, m2, n1, n2 = choose_kron_dims(d_out, d_in, strategy, max_factor)
-
+            
+            # Choose the same factorization as in gradient estimation
+            m1, n1, m2, n2 = choose_kron_dims(d_out, d_in, strategy, max_factor)
+            
+            # Use the same B matrix from b_dict (should exist from gradient estimation)
+            if clean_name in b_dict:
+                B = b_dict[clean_name]
+            else:
+                # Fallback: create B matrix (shouldn't happen in normal flow)
+                B = torch.randn(m2, n2, device=param.device, dtype=param.dtype)
+                b_dict[clean_name] = B
+            
+            # Sample the same A matrix using the same seed
             A = torch.randn(m1, n1, device=param.device, dtype=param.dtype)
-            B = torch.randn(m2, n2, device=param.device, dtype=param.dtype)
+            
+            # Compute the same Kronecker product
             perturbation = torch.kron(A, B)
-
-            # momentum
-            if clean_name not in exp_avg_m:
-                exp_avg_m[clean_name] = torch.zeros_like(perturbation)
-            exp_avg_m[clean_name] = (beta1 * exp_avg_m[clean_name] +
-                                     (1 - beta1) * projected_grad * perturbation)
-
-            is_weight = ("bias" not in clean_name
-                         and "layer_norm" not in clean_name
-                         and "layernorm" not in clean_name)
-
+            
+            # Apply update with weight decay
+            is_weight = "bias" not in clean_name and "layer_norm" not in clean_name and "layernorm" not in clean_name
             if is_weight:
-                param.data.sub_(lr * (exp_avg_m[clean_name] +
-                                      weight_decay * param.data))
+                param.data = param.data - lr * (projected_grad * perturbation + weight_decay * param.data)
             else:
-                param.data.sub_(lr * exp_avg_m[clean_name])
-        else:                                        # --- vecteurs
-            z = torch.normal(0.0, 1.0,
-                             size=param.size(),
-                             device=param.device,
-                             dtype=param.dtype)
-
-            if clean_name not in exp_avg_m:
-                exp_avg_m[clean_name] = projected_grad * z
-            else:
-                exp_avg_m[clean_name] = (beta1 * exp_avg_m[clean_name] +
-                                         (1 - beta1) * projected_grad * z)
-
-            is_weight = ("bias" not in clean_name
-                         and "layer_norm" not in clean_name
-                         and "layernorm" not in clean_name)
-
+                param.data = param.data - lr * (projected_grad * perturbation)
+        else:
+            # For vectors, use Gaussian update
+            z = torch.normal(mean=0, std=1, size=param.size(), device=param.device, dtype=param.dtype)
+            
+            is_weight = "bias" not in clean_name and "layer_norm" not in clean_name and "layernorm" not in clean_name
             if is_weight:
-                param.data.sub_(lr * (exp_avg_m[clean_name] +
-                                      weight_decay * param.data))
+                param.data = param.data - lr * (projected_grad * z + weight_decay * param.data)
             else:
-                param.data.sub_(lr * exp_avg_m[clean_name])
+                param.data = param.data - lr * (projected_grad * z)
 
-def dikronzo_perturb_parameters(model,
-                                zo_random_seed: int,
-                                scaling_factor: float = 1.0,
-                                eps: float | None = None,
-                                strategy: str = "approx_square",
-                                max_factor: int = 32):
+def kronzo_update_momentum(model, optimizer, projected_grad, zo_random_seed, b_dict, exp_avg_m, step, lr, beta1=0.9, named_parameters_to_optim=None, strategy='approx_square', max_factor=32, step_interval=50):
     """
-    Perturbe les paramètres du modèle avec un produit de Kronecker A ⊗ B
-    (gaussien pour les vecteurs).  Sert aussi bien à +eps qu’à –eps.
+    Update model parameters using KronZO with momentum.
+    Following LoZO pattern: B matrices constant for step_interval steps, A matrices fresh.
+    
+    Momentum update:
+    m_t = β1 * m_{t-1} + (1 - β1) * g_t
+    θ_t = θ_{t-1} - α * m_t
+    
+    where g_t = c * (A ⊗ B) for matrices, and c * Z for vectors
+    
+    Args:
+        model: The model to update
+        optimizer: The optimizer (not directly used but kept for API consistency)
+        projected_grad: The projected gradient coefficient c
+        zo_random_seed: Random seed for reproducibility
+        b_dict: Dictionary storing B matrices for each parameter
+        exp_avg_m: Dictionary of exponential moving average for momentum
+        step: Current optimization step
+        lr: Learning rate
+        beta1: Momentum coefficient (default: 0.9)
+        named_parameters_to_optim: List of (name, parameter) tuples to optimize
+        strategy: Kronecker factorization strategy
+        max_factor: Maximum factor size for 'fixed_factor' strategy
+        step_interval: Interval for updating B matrices
+    """
+    torch.manual_seed(zo_random_seed)
+    
+    # If named_parameters_to_optim is not provided, create it
+    if named_parameters_to_optim is None:
+        named_parameters_to_optim = []
+        for name, param in model.named_parameters():
+            if param.requires_grad:
+                clean_name = name
+                if name.startswith('_orig_mod.'):
+                    clean_name = name[len('_orig_mod.'):]
+                named_parameters_to_optim.append((clean_name, param))
+    
+    # Debug logs on first step
+    if step == 0 and master_process:
+        print(f"KronZO Momentum Update: {len(named_parameters_to_optim)} parameters, strategy={strategy}, beta1={beta1}, step_interval={step_interval}")
+    
+    for clean_name, param in named_parameters_to_optim:
+        is_weight = "bias" not in clean_name and "layer_norm" not in clean_name and "layernorm" not in clean_name
+        
+        original_dtype = param.data.dtype # Store original dtype
+        param_data_float32 = param.data.float() # Convert param data to float32
+
+        if param.ndim >= 2:
+            # For matrices, use Kronecker perturbation with momentum
+            d_out, d_in = param.shape
+            
+            # Choose the same factorization as in gradient estimation
+            m1, n1, m2, n2 = choose_kron_dims(d_out, d_in, strategy, max_factor)
+            
+            # Use the same B matrix from b_dict (should exist from gradient estimation)
+            if clean_name in b_dict:
+                B = b_dict[clean_name].float() # Convert B to float32
+            else:
+                # Fallback: create B matrix (shouldn't happen in normal flow)
+                B = torch.randn(m2, n2, device=param.device, dtype=torch.float32)
+                b_dict[clean_name] = B.to(param.dtype)
+            
+            # Sample the same A matrix using the same seed
+            A = torch.randn(m1, n1, device=param.device, dtype=torch.float32) # Use float32 for A
+            
+            # Compute the same Kronecker product
+            perturbation = torch.kron(A, B)
+            
+            # g_t = projected_grad * (A ⊗ B)
+            g_t = projected_grad * perturbation
+        else:
+            # For vectors, use Gaussian update with momentum
+            z = torch.normal(mean=0, std=1, size=param.size(), device=param.device, dtype=torch.float32) # Use float32 for Z
+            
+            # g_t = projected_grad * Z
+            g_t = projected_grad * z
+
+        # Initialize momentum if needed
+        if clean_name not in exp_avg_m:
+            exp_avg_m[clean_name] = torch.zeros_like(param_data_float32) # Initialize momentum in float32
+        
+        # Update momentum: m_t = β1 * m_{t-1} + (1 - β1) * g_t
+        current_momentum = exp_avg_m[clean_name].float() # Ensure momentum is float32
+        current_momentum.mul_(beta1).add_(g_t, alpha=1 - beta1)
+        exp_avg_m[clean_name] = current_momentum
+        
+        # Apply update with momentum: θ_t = θ_{t-1} - α * m_t
+        update_val = lr * current_momentum # This is m_t * lr
+
+        if is_weight and weight_decay > 0:
+            param_data_float32 = param_data_float32 - (update_val + weight_decay * lr * param_data_float32)
+        else:
+            param_data_float32 = param_data_float32 - update_val
+            
+        param.data = param_data_float32.to(original_dtype) # Convert back to original dtype
+
+
+# -----------------------------------------------------------------------------
+# DiKronZO (Directional Kronecker Zero-Order) functions
+# -----------------------------------------------------------------------------
+
+def dikronzo_perturb_parameters(model, b_dict, a_seed, step, scaling_factor=1, eps=None, strategy='approx_square', max_factor=32, step_interval=50):
+    """
+    Perturb model parameters using Kronecker product structure A ⊗ B for DiKronZO.
+    Following DiLoZO pattern: B matrices are kept constant for step_interval steps, A matrices are sampled per direction.
+    
+    For each matrix parameter W ∈ ℝ^(d_out × d_in), we:
+    1. Choose factorization dimensions: m1×m2 = d_out, n1×n2 = d_in
+    2. Keep B ∈ ℝ^(m2×n2) constant for step_interval steps
+    3. Sample A ∈ ℝ^(m1×n1) using a_seed for this specific direction
+    4. Compute perturbation: ΔW = A ⊗ B
     """
     if eps is None:
+        eps = zo_eps  # Use global zo_eps if not provided
+        
+    torch.manual_seed(a_seed)
+    
+    # Create a list of named parameters to optimize
+    named_parameters_to_optim = []
+    for name, param in model.named_parameters():
+        if param.requires_grad:
+            # Handle _orig_mod prefix from torch.compile
+            clean_name = name
+            if name.startswith('_orig_mod.'):
+                clean_name = name[len('_orig_mod.'):]
+            named_parameters_to_optim.append((clean_name, param))
+    
+    for clean_name, param in named_parameters_to_optim:
+        if param.ndim >= 2:
+            # For matrices, use Kronecker product perturbation
+            d_out, d_in = param.shape
+            
+            # Choose Kronecker factorization dimensions
+            m1, n1, m2, n2 = choose_kron_dims(d_out, d_in, strategy, max_factor)
+            
+            # Create new B matrix at the specified interval or if not present
+            need_new_b = (step % step_interval == 0 or 
+                         clean_name not in b_dict)
+            
+            if need_new_b:
+                B = torch.randn(m2, n2, device=param.device, dtype=param.dtype)
+                b_dict[clean_name] = B
+            else:
+                B = b_dict[clean_name]
+            
+            # Sample A using the specific seed for this direction
+            A = torch.randn(m1, n1, device=param.device, dtype=param.dtype)
+            
+            # Compute Kronecker product A ⊗ B
+            perturbation = torch.kron(A, B)
+            
+            # Apply perturbation
+            param.data = param.data + scaling_factor * perturbation * eps
+        else:
+            # For vectors (biases), use Gaussian perturbation
+            z = torch.normal(mean=0, std=1, size=param.size(), device=param.device, dtype=param.dtype)
+            param.data = param.data + scaling_factor * z * eps
+    
+    return named_parameters_to_optim
+
+def dikronzo_step(model, X, Y, b_dict, step, zo_random_seed, directional_q=None, eps=None, strategy='approx_square', max_factor=32, step_interval=50):
+    """Estimate gradient using DiKronZO (Directional Kronecker Zero-Order).
+    
+    Algorithm:
+    1. Compute baseline loss: f(θ)
+    2. Sample q random Kronecker directions A_i ⊗ B for i = 1, ..., q
+       - B matrices are kept constant for step_interval steps
+       - A_i matrices are sampled fresh for each direction
+    3. Evaluate f(θ + ε*A_i ⊗ B) for each direction i
+    4. Select A_best ⊗ B = argmin_i f(θ + ε*A_i ⊗ B) (direction that gives lowest loss)
+    5. Success = min_loss < baseline_loss
+    6. Estimate directional derivative: c = [f(θ + ε*A_best ⊗ B) - f(θ - ε*A_best ⊗ B)]/(2ε)
+       This gives the projected gradient ∇f(θ) · (A_best ⊗ B) along the best direction.
+       Since A_best ⊗ B decreases loss, c < 0, so θ ← θ - α * c * A_best ⊗ B moves toward A_best ⊗ B.
+
+    Args:
+        directional_q: Number of directions to try. If None, uses global `directional_q`.
+    """
+    current_directional_q = directional_q if directional_q is not None else globals()['directional_q']
+
+    if eps is None:
         eps = zo_eps
+    
+    baseline_loss = zo_forward(model, X, Y)
+    best_loss_val = float('inf')
+    best_a_seed = None
 
-    torch.manual_seed(zo_random_seed)
+    if step <= 2 and master_process and zo_verbose_debug:
+        print(f"DiKronZO: Baseline loss {baseline_loss:.4f}, trying q={current_directional_q} directions, eps={eps:.2e}, strategy={strategy}")
 
-    named_params = []
-    for name, p in model.named_parameters():
-        if p.requires_grad:
-            clean = name[len("_orig_mod."):] if name.startswith("_orig_mod.") else name
-            named_params.append((clean, p))
+    for i in range(current_directional_q):
+        direction_a_seed = zo_random_seed + i
+        dikronzo_perturb_parameters(model, b_dict, direction_a_seed, step, scaling_factor=1, eps=eps, strategy=strategy, max_factor=max_factor, step_interval=step_interval)
+        current_loss = zo_forward(model, X, Y)
+        if current_loss < best_loss_val:
+            best_loss_val = current_loss
+            best_a_seed = direction_a_seed
+        # Reset parameters to original state before trying next direction
+        dikronzo_perturb_parameters(model, b_dict, direction_a_seed, step, scaling_factor=-1, eps=eps, strategy=strategy, max_factor=max_factor, step_interval=step_interval)
 
-    for _, p in named_params:
-        if p.ndim >= 2:                      # matrices
-            d_out, d_in = p.shape
-            m1, m2, n1, n2 = choose_kron_dims(d_out, d_in, strategy, max_factor)
-            A = torch.randn(m1, n1, device=p.device, dtype=p.dtype)
-            B = torch.randn(m2, n2, device=p.device, dtype=p.dtype)
-            perturb = torch.kron(A, B)
-            p.data.add_(scaling_factor * perturb * eps)
-        else:                                # vecteurs
-            z = torch.normal(0.0, 1.0, size=p.size(), device=p.device, dtype=p.dtype)
-            p.data.add_(scaling_factor * z * eps)
+    success = best_loss_val < baseline_loss
 
-    return named_params
+    # If no direction improved, best_a_seed might be None. Handle this.
+    if best_a_seed is None: # This can happen if all directions yield worse or equal loss
+        if master_process:
+            print(f"DiKronZO Step: No improving direction found out of {current_directional_q}. Using first direction's seed for grad_coeff calculation.")
+        best_a_seed = zo_random_seed # Fallback to the first seed
 
-
-def dikronzo_step(model,
-                  X, Y,
-                  step: int,
-                  zo_random_seed: int,
-                  directional_q: int | None = None,
-                  eps: float | None = None,
-                  strategy: str = "approx_square",
-                  max_factor: int = 32,
-                  direct_movement: bool = False):
-    """
-    Sélection directionnelle façon DiMeZO mais avec perturbations Kronecker.
-    Retourne :
-        best_loss, grad_coeff OU direction_seed, seed, success
-    """
-    q = directional_q or globals()['directional_q']
-    eps = eps or zo_eps
-
-    baseline = zo_forward(model, X, Y)
-    best_loss, best_seed = float('inf'), None
-
-    # ---------- Phase 1 : recherche de la meilleure direction ----------
-    for i in range(q):
-        seed = zo_random_seed + i
-        # θ + ε ΔW
-        dikronzo_perturb_parameters(model, seed, 1, eps, strategy, max_factor)
-        loss_plus = zo_forward(model, X, Y)
-        # keep best
-        if loss_plus < best_loss:
-            best_loss, best_seed = loss_plus, seed
-        # reset
-        dikronzo_perturb_parameters(model, seed, -1, eps, strategy, max_factor)
-
-    success = best_loss < baseline
-
-    # ---------- Phase 2 : estimation du gradient ou mouvement direct ----------
-    if direct_movement:
-        # on ne renvoie que le seed de la meilleure direction
-        return best_loss, None, best_seed, success
-
-    # θ + ε ΔW  (déjà connue : best_loss)
-    dikronzo_perturb_parameters(model, best_seed, 1, eps, strategy, max_factor)
-    f_plus = best_loss
-    # θ − ε ΔW
-    dikronzo_perturb_parameters(model, best_seed, -2, eps, strategy, max_factor)
+    # Parameter perturbation for f_plus
+    dikronzo_perturb_parameters(model, b_dict, best_a_seed, step, scaling_factor=1, eps=eps, strategy=strategy, max_factor=max_factor, step_interval=step_interval)
+    # f_plus is ideally best_loss_val if the best_a_seed led to it, otherwise re-evaluate if necessary.
+    # If best_a_seed was a fallback, best_loss_val might not correspond to f(theta + eps A_best ⊗ B)
+    # Re-evaluating f_plus ensures correctness.
+    f_plus = zo_forward(model, X, Y) 
+    
+    # Parameter perturbation for f_minus
+    # We perturbed by +1*eps*A⊗B to get f_plus. Now perturb by -2*eps*A⊗B from current state to get to (theta - eps*A⊗B)
+    dikronzo_perturb_parameters(model, b_dict, best_a_seed, step, scaling_factor=-2, eps=eps, strategy=strategy, max_factor=max_factor, step_interval=step_interval)
     f_minus = zo_forward(model, X, Y)
-    # coeff = (f+ − f−) / (2ε)
+    
     grad_coeff = ((f_plus - f_minus) / (2 * eps)).item()
-    # reset θ
-    dikronzo_perturb_parameters(model, best_seed, 1, eps, strategy, max_factor)
+    
+    # Reset parameters to original state (theta)
+    # We are currently at (theta - eps*A⊗B). Add back 1*eps*A⊗B to get to theta
+    dikronzo_perturb_parameters(model, b_dict, best_a_seed, step, scaling_factor=1, eps=eps, strategy=strategy, max_factor=max_factor, step_interval=step_interval)
 
-    return best_loss, grad_coeff, best_seed, success
+    if step <= 2 and master_process and zo_verbose_debug:
+        success_str = "SUCCESS" if success else "FAILURE"
+        print(f"DiKronZO: f+ {f_plus:.4f}, f- {f_minus:.4f}. Best loss {best_loss_val:.4f} vs baseline {baseline_loss:.4f} -> {success_str} (grad_coeff {grad_coeff:.6f})")
 
+    return best_loss_val, grad_coeff, best_a_seed, success
 
-def dikronzo_update(model,
-                    optimizer,                # pour compat API
-                    grad_or_seed,
-                    best_seed: int,
-                    step: int,
-                    lr: float,
-                    named_parameters_to_optim: list[tuple[str, torch.Tensor]] | None = None,
-                    strategy: str = "approx_square",
-                    max_factor: int = 32,
-                    direct_movement: bool = False):
+def dikronzo_update(model, optimizer, grad_coeff, best_a_seed, b_dict, step, lr, named_parameters_to_optim=None, strategy='approx_square', max_factor=32, step_interval=50):
+    """Update model parameters using DiKronZO.
+    
+    Update rule: θ ← θ - α * grad_coeff * A_best ⊗ B_best
+    
+    Mathematical reasoning:
+    - grad_coeff = ∇f(θ) · (A_best ⊗ B_best) is the directional derivative
+    - Since A_best ⊗ B_best was selected to decrease loss, grad_coeff < 0
+    - The update θ ← θ - α * (negative) * A_best ⊗ B_best moves toward A_best ⊗ B_best
     """
-    Met à jour les paramètres :
-      • mode direct_movement : θ ← θ + α ΔW_best
-      • mode gradient        : θ ← θ − α * c * ΔW_best
-    """
-    torch.manual_seed(best_seed)
+    torch.manual_seed(best_a_seed) # Regenerate A_best
 
     if named_parameters_to_optim is None:
-        named_parameters_to_optim = [(n if not n.startswith("_orig_mod.") else n[10:], p)
-                                     for n, p in model.named_parameters()
-                                     if p.requires_grad]
+        # This list comprehension was rebuilt from context.
+        named_parameters_to_optim = [(name if not name.startswith('_orig_mod.') else name[len('_orig_mod.'):], param)
+                                     for name, param in model.named_parameters() if param.requires_grad]
 
-    coeff = grad_or_seed            # soit None (direct) soit grad_coeff (gradient)
+    if step <= 2 and master_process and zo_verbose_debug:
+        print(f"DiKronZO Update: {len(named_parameters_to_optim)} parameters, strategy={strategy}, lr={lr:.2e}")
 
-    for name, p in named_parameters_to_optim:
-        is_weight = ("bias" not in name and
-                     "layer_norm" not in name and
-                     "layernorm" not in name)
+    for clean_name, param in named_parameters_to_optim:
+        is_weight = "bias" not in clean_name and "layer_norm" not in clean_name and "layernorm" not in clean_name
+        
+        original_dtype = param.data.dtype # Store original dtype
+        param_data_float32 = param.data.float() # Convert to float32 for update precision
 
-        if p.ndim >= 2:              # matrices
-            d_out, d_in = p.shape
-            m1, m2, n1, n2 = choose_kron_dims(d_out, d_in, strategy, max_factor)
-            A = torch.randn(m1, n1, device=p.device, dtype=p.dtype)
-            B = torch.randn(m2, n2, device=p.device, dtype=p.dtype)
-            perturb = torch.kron(A, B)
-        else:                        # vecteurs
-            perturb = torch.normal(0.0, 1.0, size=p.size(), device=p.device, dtype=p.dtype)
-
-        if direct_movement:
-            update = lr * perturb
+        if param.ndim >= 2:
+            # For matrices, use Kronecker product perturbation
+            d_out, d_in = param.shape
+            
+            # Choose the same factorization as in gradient estimation
+            m1, n1, m2, n2 = choose_kron_dims(d_out, d_in, strategy, max_factor)
+            
+            # Use the same B matrix from b_dict
+            if clean_name in b_dict:
+                B_best = b_dict[clean_name].float() # Convert B to float32
+            else:
+                # Fallback: create B matrix (shouldn't happen in normal flow)
+                B_best = torch.randn(m2, n2, device=param.device, dtype=torch.float32)
+                b_dict[clean_name] = B_best.to(param.dtype)
+            
+            # Sample A_best using the best seed
+            A_best = torch.randn(m1, n1, device=param.device, dtype=torch.float32) # Use float32 for A
+            
+            # Compute Kronecker product A_best ⊗ B_best
+            perturbation = torch.kron(A_best, B_best)
+            
+            # Perform update calculation in float32
+            update_term = lr * grad_coeff * perturbation
+            
+            if is_weight and weight_decay > 0:
+                param_data_float32 = param_data_float32 - (update_term + weight_decay * lr * param_data_float32)
+            else:
+                param_data_float32 = param_data_float32 - update_term
         else:
-            update = -lr * coeff * perturb
+            # For vectors (biases)
+            z_best = torch.normal(mean=0, std=1, size=param.size(), device=param.device, dtype=torch.float32) # Use float32 for Z
+            update_term_vec = lr * grad_coeff * z_best
+            
+            if is_weight and weight_decay > 0:
+                param_data_float32 = param_data_float32 - (update_term_vec + weight_decay * lr * param_data_float32)
+            else:
+                param_data_float32 = param_data_float32 - update_term_vec
+        
+        param.data = param_data_float32.to(original_dtype) # Convert back to original dtype
 
-        if is_weight and not direct_movement:
-            # weight decay seulement en mode gradient (facultatif en direct)
-            p.data.add_(update - lr * weight_decay * p.data)
+def dikronzo_update_momentum(model, optimizer, grad_coeff, best_a_seed, b_dict, exp_avg_m, step, lr, beta1=0.9, named_parameters_to_optim=None, strategy='approx_square', max_factor=32, step_interval=50):
+    """Update model parameters using DiKronZO with momentum.
+    
+    Momentum update:
+    m_t = β1 * m_{t-1} + (1 - β1) * g_t
+    θ_t = θ_{t-1} - α * m_t
+    
+    where g_t = grad_coeff * A_best ⊗ B_best for matrices, and grad_coeff * Z_best for vectors
+    
+    Mathematical reasoning:
+    - grad_coeff = ∇f(θ) · (A_best ⊗ B_best) is the directional derivative
+    - Since A_best ⊗ B_best was selected to decrease loss, grad_coeff < 0
+    - The momentum accumulates these negative gradients, creating consistent movement toward good directions
+    """
+    torch.manual_seed(best_a_seed) # Regenerate A_best / Z_best
+
+    if named_parameters_to_optim is None:
+        named_parameters_to_optim = [(name if not name.startswith('_orig_mod.') else name[len('_orig_mod.'):], param)
+                                     for name, param in model.named_parameters() if param.requires_grad]
+
+    if step <= 2 and master_process and zo_verbose_debug:
+        print(f"DiKronZO Momentum Update: {len(named_parameters_to_optim)} parameters, lr={lr:.2e}, beta1={beta1}, strategy={strategy}")
+
+    for clean_name, param in named_parameters_to_optim:
+        is_weight = "bias" not in clean_name and "layer_norm" not in clean_name and "layernorm" not in clean_name
+        
+        original_dtype = param.data.dtype
+        param_data_float32 = param.data.float() # Convert param data to float32
+
+        if param.ndim >= 2:
+            # For matrices, use Kronecker product perturbation
+            d_out, d_in = param.shape
+            
+            # Choose the same factorization as in gradient estimation
+            m1, n1, m2, n2 = choose_kron_dims(d_out, d_in, strategy, max_factor)
+            
+            # Use the same B matrix from b_dict
+            if clean_name in b_dict:
+                B_best = b_dict[clean_name].float() # Convert B to float32
+            else:
+                # Fallback: create B matrix (shouldn't happen in normal flow)
+                B_best = torch.randn(m2, n2, device=param.device, dtype=torch.float32)
+                b_dict[clean_name] = B_best.to(param.dtype)
+            
+            # Sample A_best using the best seed
+            A_best = torch.randn(m1, n1, device=param.device, dtype=torch.float32) # A in float32
+            
+            # g_t = grad_coeff * (A_best ⊗ B_best)
+            g_t = grad_coeff * torch.kron(A_best, B_best)
         else:
-            p.data.add_(update)
+            # For vectors (biases)
+            z_best = torch.normal(mean=0, std=1, size=param.size(), device=param.device, dtype=torch.float32) # Z in float32
+            # g_t = grad_coeff * Z_best
+            g_t = grad_coeff * z_best
+
+        if clean_name not in exp_avg_m:
+            exp_avg_m[clean_name] = torch.zeros_like(param_data_float32) # Initialize momentum in float32
+        
+        current_momentum = exp_avg_m[clean_name].float() # Ensure momentum is float32
+        current_momentum.mul_(beta1).add_(g_t, alpha=1 - beta1)
+        exp_avg_m[clean_name] = current_momentum
+        
+        update_val = lr * current_momentum # This is m_t * lr
+
+        if is_weight and weight_decay > 0:
+            param_data_float32 = param_data_float32 - (update_val + weight_decay * lr * param_data_float32)
+        else:
+            param_data_float32 = param_data_float32 - update_val
+            
+        param.data = param_data_float32.to(original_dtype)
+
+# ... existing code ...
 
 # -----------------------------------------------------------------------------
 # Adaptive zo_eps functions
@@ -2147,15 +2756,15 @@ model.to(device)
 # Initialize LOZO dictionary for low-rank vectors
 if not init_from == 'resume':
     v_dict = {}
+    b_dict = {}  # For KronZO/DiKronZO B matrices
     step = 0
     exp_avg_m = {}  # For momentum (LOZO-M, MeZO-M, DiLoZO-M)
-    v_old_dict = {} # For momentum with step_interval (LOZO-M)
-elif 'exp_avg_m' in checkpoint and (use_momentum and (train_method == 'lozom' or train_method == 'mezom' or train_method == 'dilozo' or train_method == 'kronzo')):
+elif 'exp_avg_m' in checkpoint and (use_momentum and (train_method == 'lozom' or train_method == 'mezom' or train_method == 'dilozo' or train_method == 'kronzo' or train_method == 'dikronzo')):
     exp_avg_m = checkpoint['exp_avg_m']
-    v_old_dict = checkpoint.get('v_old_dict', {}) # v_old_dict is specific to LOZO-M
+    b_dict = checkpoint.get('b_dict', {})  # Load KronZO/DiKronZO B matrices if available
 else:
     exp_avg_m = {} # Initialize if not loaded
-    v_old_dict = {} # Initialize if not loaded
+    b_dict = checkpoint.get('b_dict', {}) if init_from == 'resume' else {}  # Load or initialize B matrices
 
 # Initialize adaptive zo_eps manager
 if use_adaptive_eps:
@@ -2171,12 +2780,20 @@ if use_adaptive_eps:
 else:
     adaptive_eps_manager = None
 
+# Initialize stability monitoring variables
+recovery_attempts = 0
+max_recovery_attempts = zo_max_recovery_attempts
+original_lr = learning_rate
+stability_check_enabled = True
+
+if master_process:
+    print(f"Stability monitoring enabled: loss_threshold={zo_loss_threshold}, grad_clip={zo_grad_clip}, param_clip={zo_param_clip}")
+
 # optimizer
 optimizer = model.configure_optimizers(weight_decay, learning_rate, (beta1, beta2), device_type)
 if init_from == 'resume' and 'optimizer' in checkpoint:
     optimizer.load_state_dict(checkpoint['optimizer'])
 checkpoint = None # free up memory
-
 # compile the model
 if compile:
     print("compiling the model... (takes a ~minute)")
@@ -2251,9 +2868,10 @@ while True:
             
             # Add rank info for rank-adaptive LOZO
             if rank_adaptive and (train_method == 'lozo' or train_method == 'lozom' or train_method == 'dilozo'): # Added 'dilozo'
-                current_rank = get_current_rank(iter_num, max_iters, min_rank, max_rank)
+                current_rank = get_current_rank(iter_num, max_iters, min_rank, max_rank, rank_strategy)
                 wandb_dict["rank"] = current_rank
                 wandb_dict["rank_progress"] = min(iter_num / max_iters, 1.0)
+                wandb_dict["rank_strategy"] = rank_strategy
             
             wandb.log(wandb_dict)
         if losses['val'] < best_val_loss or always_save_checkpoint:
@@ -2267,13 +2885,12 @@ while True:
                     'best_val_loss': best_val_loss,
                     'config': config,
                     'v_dict': v_dict,  # Save LOZO state
+                    'b_dict': b_dict,  # Save KronZO/DiKronZO B matrices
                     'step': step,      # Save step counter
                 }
                 if train_method == 'lozom' or train_method == 'mezom':
                     checkpoint['exp_avg_m'] = exp_avg_m
-                    if train_method == 'lozom':
-                        checkpoint['v_old_dict'] = v_old_dict
-                elif train_method == 'kronzo' and use_momentum:
+                elif (train_method == 'kronzo' or train_method == 'dikronzo') and use_momentum:
                     checkpoint['exp_avg_m'] = exp_avg_m
                 print(f"saving checkpoint to {out_dir}")
                 torch.save(checkpoint, os.path.join(out_dir, 'ckpt.pt'))
@@ -2285,12 +2902,12 @@ while True:
         # LOZO or LOZO-M optimization
         
         # Compute current rank for adaptive scheduling
-        current_rank = get_current_rank(iter_num, max_iters, min_rank, max_rank)
+        current_rank = get_current_rank(iter_num, max_iters, min_rank, max_rank, rank_strategy)
         
         # Debug: Print rank info on first few iterations
         if iter_num <= 5 and master_process and rank_adaptive:
             progress = min(iter_num / max_iters, 1.0)
-            print(f"Rank-Adaptive LOZO: iter {iter_num}, progress {progress:.3f}, rank {current_rank}/{max_rank}")
+            print(f"Rank-Adaptive LOZO ({rank_strategy}): iter {iter_num}, progress {progress:.3f}, rank {current_rank}/{max_rank}")
         
         for micro_step in range(gradient_accumulation_steps):
             # Create a random seed for this step
@@ -2331,7 +2948,7 @@ while True:
         # Update parameters using LOZO or LOZO-M
         if zo_q == 1:
             if train_method == 'lozom':
-                lowrank_zo_update_momentum(raw_model, optimizer, accumulated_grad, current_zo_seed, v_dict, exp_avg_m, v_old_dict, step, lr, momentum_beta, current_rank=current_rank)
+                lowrank_zo_update_momentum(raw_model, optimizer, accumulated_grad, current_zo_seed, v_dict, exp_avg_m, step, lr, momentum_beta, current_rank=current_rank)
             else:
                 lowrank_zo_update(raw_model, optimizer, accumulated_grad, current_zo_seed, v_dict, step, lr, current_rank=current_rank)
         else:
@@ -2412,25 +3029,46 @@ while True:
             current_zo_seed = np.random.randint(1000000000)
             
             # Estimate gradient with MeZO
-            loss, projected_grad, named_params = mezo_step(model, X, Y, step, current_zo_seed)
+            if zo_q == 1:
+                # Use original implementation for q=1
+                loss, projected_grad, named_params = mezo_step(model, X, Y, step, current_zo_seed)
+                
+                # Scale the loss to account for gradient accumulation
+                loss = loss / gradient_accumulation_steps
+                
+                # Accumulate the projected gradient
+                if micro_step == 0:
+                    accumulated_grad = projected_grad / gradient_accumulation_steps
+                else:
+                    accumulated_grad += projected_grad / gradient_accumulation_steps
+            else:
+                # Use new q-times implementation
+                loss, grad_dict, named_params = mezo_step(model, X, Y, step, current_zo_seed)
+                
+                # Scale the loss to account for gradient accumulation
+                loss = loss / gradient_accumulation_steps
+                
+                # Scale and accumulate the gradients
+                if micro_step == 0:
+                    accumulated_grads = {}
+                    for name, grad in grad_dict.items():
+                        accumulated_grads[name] = grad / gradient_accumulation_steps
+                else:
+                    for name, grad in grad_dict.items():
+                        accumulated_grads[name] += grad / gradient_accumulation_steps
             
             # Immediately async prefetch next batch while model is doing the forward pass on the GPU
             X, Y = get_batch('train')
-            
-            # Scale the loss to account for gradient accumulation
-            loss = loss / gradient_accumulation_steps
-            
-            # Accumulate the projected gradient
-            if micro_step == 0:
-                accumulated_grad = projected_grad / gradient_accumulation_steps
-            else:
-                accumulated_grad += projected_grad / gradient_accumulation_steps
 
         # Update parameters using MeZO or MeZO-M
-        if train_method == 'mezom':
-            mezo_update_momentum(raw_model, optimizer, accumulated_grad, current_zo_seed, exp_avg_m, step, lr, momentum_beta, named_params)
+        if zo_q == 1:
+            if train_method == 'mezom':
+                mezo_update_momentum(raw_model, optimizer, accumulated_grad, current_zo_seed, exp_avg_m, step, lr, momentum_beta, named_params)
+            else:
+                mezo_update(raw_model, optimizer, accumulated_grad, current_zo_seed, step, lr, named_params)
         else:
-            mezo_update(raw_model, optimizer, accumulated_grad, current_zo_seed, step, lr, named_params)
+            # Use direct gradient update with accumulated gradients for q>1
+            mezo_update_direct(raw_model, optimizer, accumulated_grads, lr)
         
         # Increment step counter after parameter update (not per microbatch)
         step += 1
@@ -2482,12 +3120,12 @@ while True:
     
     elif train_method == 'dilozo':
         # DiLoZO (Directional LoZO) optimization
-        current_rank = get_current_rank(iter_num, max_iters, min_rank, max_rank)
+        current_rank = get_current_rank(iter_num, max_iters, min_rank, max_rank, rank_strategy)
 
         # Debug: Print rank info on first few iterations
         if iter_num <= 5 and master_process and rank_adaptive:
             progress = min(iter_num / max_iters, 1.0)
-            print(f"Rank-Adaptive DiLoZO: iter {iter_num}, progress {progress:.3f}, rank {current_rank}/{max_rank}")
+            print(f"Rank-Adaptive DiLoZO ({rank_strategy}): iter {iter_num}, progress {progress:.3f}, rank {current_rank}/{max_rank}")
 
         for micro_step in range(gradient_accumulation_steps):
             # Create a random seed for this step
@@ -2545,7 +3183,7 @@ while True:
             current_zo_seed = np.random.randint(1000000000)
             
             # Estimate gradient with KronZO
-            loss, projected_grad, named_params = kronzo_step(model, X, Y, step, current_zo_seed, strategy=kron_strategy, max_factor=kron_max_factor, eps=zo_eps)
+            loss, projected_grad, named_params = kronzo_step(model, X, Y, b_dict, step, current_zo_seed, strategy=kron_strategy, max_factor=kron_max_factor, eps=zo_eps, step_interval=step_interval)
             
             # Immediately async prefetch next batch while model is doing the forward pass on the GPU
             X, Y = get_batch('train')
@@ -2556,91 +3194,58 @@ while True:
             # Accumulate the projected gradient
             if micro_step == 0:
                 accumulated_grad = projected_grad / gradient_accumulation_steps
+                first_microbatch_seed = current_zo_seed  # Store the seed from first microbatch for consistency
             else:
                 accumulated_grad += projected_grad / gradient_accumulation_steps
 
         # Update parameters using KronZO or KronZO with momentum
+        # Use the seed from the first microbatch for consistency
         if use_momentum:
-            kronzo_update_momentum(raw_model, optimizer, accumulated_grad, current_zo_seed, exp_avg_m, step, lr, momentum_beta, named_params, strategy=kron_strategy, max_factor=kron_max_factor)
+            kronzo_update_momentum(raw_model, optimizer, accumulated_grad, first_microbatch_seed, b_dict, exp_avg_m, step, lr, momentum_beta, named_params, strategy=kron_strategy, max_factor=kron_max_factor, step_interval=step_interval)
         else:
-            kronzo_update(raw_model, optimizer, accumulated_grad, current_zo_seed, step, lr, named_params, strategy=kron_strategy, max_factor=kron_max_factor)
+            kronzo_update(raw_model, optimizer, accumulated_grad, first_microbatch_seed, b_dict, step, lr, named_params, strategy=kron_strategy, max_factor=kron_max_factor, step_interval=step_interval)
         
         # Increment step counter after parameter update (not per microbatch)
         step += 1
+    
     elif train_method == 'dikronzo':
-        # DiKronZO : Directional + Kronecker Zero‑Order
+        # DiKronZO (Directional Kronecker Zero-Order) optimization
         for micro_step in range(gradient_accumulation_steps):
-            current_zo_seed = np.random.randint(1_000_000_000)
-
-            # Étape directionnelle
-            loss_step, grad_or_coeff, best_seed, success = dikronzo_step(
-                model, X, Y,
-                step               = step,
-                zo_random_seed     = current_zo_seed,
-                directional_q      = directional_q,
-                eps                = zo_eps,
-                strategy           = kron_strategy,
-                max_factor         = kron_max_factor,
-                direct_movement    = dikronzo_direct_movement
-            )
-
-            # Pré‑chargement du batch suivant
+            # Create a random seed for this step
+            current_zo_seed = np.random.randint(1000000000)
+            
+            # Estimate gradient with DiKronZO
+            loss, grad_coeff, best_a_seed, success = dikronzo_step(model, X, Y, b_dict, step, current_zo_seed, directional_q=directional_q, eps=zo_eps, strategy=kron_strategy, max_factor=kron_max_factor, step_interval=step_interval)
+            
+            # Immediately async prefetch next batch while model is doing the forward pass on the GPU
             X, Y = get_batch('train')
-
-            # Mise à l’échelle pour l’accumulation
-            loss_step = loss_step / gradient_accumulation_steps
-
+            
+            # Scale the loss to account for gradient accumulation
+            loss = loss / gradient_accumulation_steps
+            
+            # Accumulate the gradient coefficient
             if micro_step == 0:
-                first_microbatch_loss    = loss_step
-                first_microbatch_success = success
-                best_direction_seed      = best_seed
-
-                if dikronzo_direct_movement:
-                    # pas de gradient : update direct
-                    pass
-                else:
-                    accumulated_grad = grad_or_coeff / gradient_accumulation_steps
+                accumulated_grad_coeff = grad_coeff / gradient_accumulation_steps
+                accumulated_success = success
             else:
-                if not dikronzo_direct_movement:
-                    accumulated_grad += grad_or_coeff / gradient_accumulation_steps
-        loss = loss_step
+                accumulated_grad_coeff += grad_coeff / gradient_accumulation_steps
+                accumulated_success = accumulated_success or success  # Success if any microbatch succeeds
 
-        # ----------- mise à jour des paramètres -----------
-        if dikronzo_direct_movement:
-            dikronzo_update(
-                raw_model, optimizer,
-                grad_or_seed       = None,          # ignoré en mode direct
-                best_seed          = best_direction_seed,
-                step               = step,
-                lr                 = lr,
-                direct_movement    = True,
-                strategy           = kron_strategy,
-                max_factor         = kron_max_factor
-            )
+        # Update parameters using DiKronZO or DiKronZO with momentum
+        if use_momentum:
+            dikronzo_update_momentum(raw_model, optimizer, accumulated_grad_coeff, best_a_seed, b_dict, exp_avg_m, step, lr, momentum_beta, strategy=kron_strategy, max_factor=kron_max_factor, step_interval=step_interval)
         else:
-            dikronzo_update(
-                raw_model, optimizer,
-                grad_or_seed       = accumulated_grad,
-                best_seed          = best_direction_seed,
-                step               = step,
-                lr                 = lr,
-                direct_movement    = False,
-                strategy           = kron_strategy,
-                max_factor         = kron_max_factor
-            )
-
-        # ----------- gestion adaptative de eps -----------
+            dikronzo_update(raw_model, optimizer, accumulated_grad_coeff, best_a_seed, b_dict, step, lr, strategy=kron_strategy, max_factor=kron_max_factor, step_interval=step_interval)        
+        # Record step for adaptive eps if enabled
         if use_adaptive_eps and adaptive_eps_manager is not None:
-            adaptive_eps_manager.record_step(
-                loss           = first_microbatch_loss,
-                projected_grad = accumulated_grad if not dikronzo_direct_movement else 0.0,
-                learning_rate  = lr,
-                method_info    = {'success': first_microbatch_success}
-            )
+            method_info = {'success': accumulated_success}
+            adaptive_eps_manager.record_step(loss, accumulated_grad_coeff, lr, method_info)
+            # Update global zo_eps for next iteration
             zo_eps = adaptive_eps_manager.get_eps()
-
-        # incrément global « step » (suivi LOZO)
+        
+        # Increment step counter after parameter update (not per microbatch)
         step += 1
+    
     else:
         # Traditional optimizer (Adam or SGD)
         model.train()
@@ -2660,6 +3265,81 @@ while True:
         # Step the optimizer
         optimizer.step()
         optimizer.zero_grad(set_to_none=True)
+
+    # =========================================================================
+    # STABILITY MONITORING AND RECOVERY LOGIC
+    # =========================================================================
+    # Check for numerical instability after parameter updates
+    if stability_check_enabled and train_method in ['lozo', 'lozom', 'svdlozo', 'mezo', 'mezom', 'dimezo', 'dilozo', 'kronzo', 'dikronzo']:
+        # Get the current loss value (scaled back to original scale)
+        current_loss = loss.item() * gradient_accumulation_steps
+        
+        # Check for loss instability
+        if not check_loss_stability(current_loss, zo_loss_threshold):
+            if master_process:
+                print(f"\n⚠️  INSTABILITY DETECTED at step {iter_num}!")
+                print(f"   Loss: {current_loss:.6f} (threshold: {zo_loss_threshold})")
+                print(f"   Recovery attempt {recovery_attempts + 1}/{max_recovery_attempts}")
+            
+            if recovery_attempts < max_recovery_attempts:
+                # Attempt recovery
+                recovery_attempts += 1
+                
+                # Reduce learning rate
+                lr = lr * zo_recovery_lr_factor
+                learning_rate = learning_rate * zo_recovery_lr_factor
+                
+                # Reset optimizer momentum buffers
+                if hasattr(optimizer, 'state'):
+                    for group in optimizer.param_groups:
+                        group['lr'] = lr
+                    # Clear momentum buffers
+                    for state in optimizer.state.values():
+                        if 'exp_avg' in state:
+                            state['exp_avg'].zero_()
+                        if 'exp_avg_sq' in state:
+                            state['exp_avg_sq'].zero_()
+                
+                # Reset ZO-specific momentum buffers
+                if train_method in ['lozom', 'mezom'] and exp_avg_m:
+                    for key in exp_avg_m:
+                        exp_avg_m[key].zero_()
+                
+                # Reset adaptive eps if enabled
+                if use_adaptive_eps and adaptive_eps_manager is not None:
+                    adaptive_eps_manager.current_eps = adaptive_eps_manager.base_eps * 0.5  # Reduce eps
+                    zo_eps = adaptive_eps_manager.current_eps
+                
+                if master_process:
+                    print(f"   🔧 Recovery applied:")
+                    print(f"      - Learning rate: {lr:.2e} (reduced by {zo_recovery_lr_factor}x)")
+                    print(f"      - Momentum buffers reset")
+                    if use_adaptive_eps:
+                        print(f"      - zo_eps reduced to: {zo_eps:.2e}")
+                    print(f"   Continuing training...")
+                
+                # Continue to next iteration
+                iter_num += 1
+                local_iter_num += 1
+                continue
+                
+            else:
+                # Max recovery attempts reached
+                if master_process:
+                    print(f"\n❌ TRAINING STOPPED: Maximum recovery attempts ({max_recovery_attempts}) reached.")
+                    print(f"   Final loss: {current_loss:.6f}")
+                    print(f"   Consider:")
+                    print(f"   - Reducing learning_rate further (current: {lr:.2e})")
+                    print(f"   - Increasing zo_eps (current: {zo_eps:.2e})")
+                    print(f"   - Reducing rank_r (current: {rank_r})")
+                    print(f"   - Using a different ZO method")
+                break
+        else:
+            # Loss is stable, reset recovery counter
+            if recovery_attempts > 0:
+                recovery_attempts = 0
+                if master_process:
+                    print(f"✅ Training stabilized at step {iter_num}, loss: {current_loss:.4f}")
 
     # timing and logging
     t1 = time.time()
@@ -2702,7 +3382,7 @@ while True:
         
         # Add rank info for rank-adaptive LOZO
         if rank_adaptive and (train_method == 'lozo' or train_method == 'lozom' or train_method == 'dilozo'): # Added 'dilozo'
-            current_rank = get_current_rank(iter_num, max_iters, min_rank, max_rank)
+            current_rank = get_current_rank(iter_num, max_iters, min_rank, max_rank, rank_strategy)
             pbar_info['rank'] = f'{current_rank}/{max_rank}'
         
         # Add adaptive eps info to progress bar if enabled
@@ -2723,3 +3403,7 @@ pbar.close()
 
 if ddp:
     destroy_process_group() 
+
+
+
+

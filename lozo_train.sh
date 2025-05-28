@@ -1,198 +1,131 @@
 #!/bin/bash
-# This script runs LOZO training for GPT-2 pretraining
-# Usage: bash lozo_train.sh [lozo|lozom|svdlozo|mezo|mezom|dimezo|dilozo|adam|sgd] [single|multi] [dataset] [adaptive|rank-adaptive]
+# =============================================================================
+# SIMPLIFIED TRAINING SCRIPT FOR NANOGPT WITH ZERO-ORDER OPTIMIZATION
+# =============================================================================
+# This script runs training using the comprehensive config files.
+# Usage: bash lozo_train.sh [config_type] [single|multi]
+#
+# Config types:
+#   - first-order: Adam, SGD (train_first_order_config.py)
+#   - mezo: MeZO, MeZO-M, DiMeZO (train_mezo_config.py)
+#   - lozo: LoZO, LoZO-M, SVD-LoZO, DiLoZO (train_lozo_config.py)
+#   - kronzo: KronZO, DiKronZO (train_kronzo_config.py)
 
-METHOD=${1:-lozo}      # lozo, lozom, svdlozo, mezo, mezom, dimezo, dilozo, adam, or sgd
-MODE=${2:-single}      # single or multi (for multi-GPU)
-DATASET=${3:-openwebtext}  # dataset name: openwebtext, shakespeare, etc.
-ADAPTIVE=${4:-}        # optional: "adaptive" for adaptive zo_eps variants, "rank-adaptive" for rank scheduling
+# =============================================================================
+# ARGUMENT PARSING
+# =============================================================================
+CONFIG_TYPE=${1:-lozo}    # Config type: first-order, mezo, lozo, kronzo
+MODE=${2:-single}         # Execution mode: single or multi (for multi-GPU)
 
-# Create timestamp
-TIMESTAMP=$(date +"%Y%m%d-%H%M%S")
-
-# Select config file based on method and dataset
-if [ "$DATASET" = "shakespeare" ]; then
-    if [ "$METHOD" = "lozo" ]; then
-        if [ "$ADAPTIVE" = "rank-adaptive" ]; then
-            CONFIG="config/train_rank_adaptive_lozo_shakespeare.py"
-            echo "Running Rank-Adaptive LOZO training on Shakespeare with config: $CONFIG"
-        else
-            CONFIG="config/train_lozo_shakespeare.py"
-            echo "Running standard LOZO training on Shakespeare with config: $CONFIG"
-        fi
-    elif [ "$METHOD" = "lozom" ]; then
-        CONFIG="config/train_lozom_shakespeare.py"
-        echo "Running LOZO-M (with momentum) training on Shakespeare with config: $CONFIG"
-    elif [ "$METHOD" = "svdlozo" ]; then
-        CONFIG="config/train_svdlozo_shakespeare.py"
-        echo "Running SVD-LOZO training on Shakespeare with config: $CONFIG"
-    elif [ "$METHOD" = "mezo" ]; then
-        CONFIG="config/train_mezo_shakespeare.py"
-        echo "Running MeZO training on Shakespeare with config: $CONFIG"
-    elif [ "$METHOD" = "mezom" ]; then
-        CONFIG="config/train_mezom_shakespeare.py"
-        echo "Running MeZO-M (with momentum) training on Shakespeare with config: $CONFIG"
-    elif [ "$METHOD" = "dimezo" ]; then
-        if [ "$ADAPTIVE" = "adaptive" ]; then
-            CONFIG="config/train_dimezo_adaptive_shakespeare.py"
-            echo "Running DiMeZO with Adaptive zo_eps training on Shakespeare with config: $CONFIG"
-        else
-            CONFIG="config/train_dimezo_shakespeare.py"
-            echo "Running DiMeZO training on Shakespeare with config: $CONFIG"
-        fi
-    elif [ "$METHOD" = "dilozo" ]; then
-        if [ "$ADAPTIVE" = "adaptive" ]; then
-            CONFIG="config/train_dilozo_adaptive_shakespeare.py"
-            echo "Running DiLoZO with Adaptive zo_eps training on Shakespeare with config: $CONFIG"
-        elif [ "$ADAPTIVE" = "rank-adaptive" ]; then
-            CONFIG="config/train_dilozo_rank_adaptive_shakespeare.py"
-            echo "Running DiLoZO with Rank Adaptive training on Shakespeare with config: $CONFIG"
-        else
-            CONFIG="config/train_dilozo_shakespeare.py"
-            echo "Running DiLoZO training on Shakespeare with config: $CONFIG"
-        fi
-    elif [ "$METHOD" = "adam" ]; then
-        CONFIG="config/train_adam_shakespeare.py"
-        echo "Running Adam optimizer training on Shakespeare with config: $CONFIG"
-    elif [ "$METHOD" = "sgd" ]; then
-        CONFIG="config/train_sgd_shakespeare.py"
-        echo "Running SGD optimizer training on Shakespeare with config: $CONFIG"
-    else
-        echo "Invalid method. Use 'lozo', 'lozom', 'svdlozo', 'mezo', 'mezom', 'dimezo', 'dilozo', 'adam', or 'sgd'"
+# Validate config type
+case "$CONFIG_TYPE" in
+    first-order|mezo|lozo|kronzo)
+        ;;
+    *)
+        echo "Error: Invalid config type '$CONFIG_TYPE'"
+        echo "Valid options: first-order, mezo, lozo, kronzo"
+        echo ""
+        echo "Usage: bash lozo_train.sh [config_type] [single|multi]"
+        echo ""
+        echo "Examples:"
+        echo "  bash lozo_train.sh lozo single          # LoZO on single GPU"
+        echo "  bash lozo_train.sh mezo multi           # MeZO on multiple GPUs"
+        echo "  bash lozo_train.sh first-order single   # Adam/SGD on single GPU"
+        echo "  bash lozo_train.sh kronzo single        # KronZO on single GPU"
         exit 1
-    fi
-else
-    # Default GPT-2 configs for other datasets
-    if [ "$METHOD" = "lozo" ]; then
-        if [ "$ADAPTIVE" = "rank-adaptive" ]; then
-            CONFIG="config/train_rank_adaptive_lozo_gpt2.py"
-            echo "Running Rank-Adaptive LOZO training with config: $CONFIG"
-        else
-            CONFIG="config/train_lozo_gpt2.py"
-            echo "Running standard LOZO training with config: $CONFIG"
-        fi
-    elif [ "$METHOD" = "lozom" ]; then
-        CONFIG="config/train_lozom_gpt2.py"
-        echo "Running LOZO-M (with momentum) training with config: $CONFIG"
-    elif [ "$METHOD" = "svdlozo" ]; then
-        CONFIG="config/train_svdlozo_gpt2.py"
-        echo "Running SVD-LOZO training with config: $CONFIG"
-    elif [ "$METHOD" = "mezo" ]; then
-        CONFIG="config/train_mezo_gpt2.py"
-        echo "Running MeZO training with config: $CONFIG"
-    elif [ "$METHOD" = "mezom" ]; then
-        CONFIG="config/train_mezom_gpt2.py"
-        echo "Running MeZO-M (with momentum) training with config: $CONFIG"
-    elif [ "$METHOD" = "dimezo" ]; then
-        if [ "$ADAPTIVE" = "adaptive" ]; then
-            CONFIG="config/train_dimezo_adaptive_gpt2.py"
-            echo "Running DiMeZO with Adaptive zo_eps training with config: $CONFIG"
-        else
-            CONFIG="config/train_dimezo_gpt2.py"
-            echo "Running DiMeZO training with config: $CONFIG"
-        fi
-    elif [ "$METHOD" = "dilozo" ]; then
-        if [ "$ADAPTIVE" = "adaptive" ]; then
-            CONFIG="config/train_dilozo_adaptive_gpt2.py"
-            echo "Running DiLoZO with Adaptive zo_eps training with config: $CONFIG"
-        elif [ "$ADAPTIVE" = "rank-adaptive" ]; then
-            CONFIG="config/train_dilozo_rank_adaptive_gpt2.py"
-            echo "Running DiLoZO with Rank Adaptive training with config: $CONFIG"
-        else
-            CONFIG="config/train_dilozo_gpt2.py"
-            echo "Running DiLoZO training with config: $CONFIG"
-        fi
-    elif [ "$METHOD" = "adam" ]; then
-        CONFIG="config/train_adam_gpt2.py"
-        echo "Running Adam optimizer training with config: $CONFIG"
-    elif [ "$METHOD" = "sgd" ]; then
-        CONFIG="config/train_sgd_gpt2.py"
-        echo "Running SGD optimizer training with config: $CONFIG"
-    else
-        echo "Invalid method. Use 'lozo', 'lozom', 'svdlozo', 'mezo', 'mezom', 'dimezo', 'dilozo', 'adam', or 'sgd'"
+        ;;
+esac
+
+# Validate execution mode
+case "$MODE" in
+    single|multi)
+        ;;
+    *)
+        echo "Error: Invalid mode '$MODE'"
+        echo "Valid options: single, multi"
         exit 1
-    fi
+        ;;
+esac
+
+# =============================================================================
+# CONFIG FILE SELECTION
+# =============================================================================
+case "$CONFIG_TYPE" in
+    first-order)
+        CONFIG="config/train_first_order_config.py"
+        SCRIPT="train.py"  # Use standard training script for first-order methods
+        ;;
+    mezo)
+        CONFIG="config/train_mezo_config.py"
+        SCRIPT="lozo_train.py"  # Use zero-order training script
+        ;;
+    lozo)
+        CONFIG="config/train_lozo_config.py"
+        SCRIPT="lozo_train.py"  # Use zero-order training script
+        ;;
+    kronzo)
+        CONFIG="config/train_kronzo_config.py"
+        SCRIPT="lozo_train.py"  # Use zero-order training script
+        ;;
+esac
+
+# =============================================================================
+# INTELLIGENT LOGGING SETUP
+# =============================================================================
+# Generate intelligent log name based on config parameters
+echo "Analyzing configuration for intelligent log naming..."
+INTELLIGENT_LOG_NAME=$(python generate_log_name.py "$CONFIG")
+
+if [ $? -ne 0 ] || [ -z "$INTELLIGENT_LOG_NAME" ]; then
+    echo "Warning: Could not generate intelligent log name, using fallback"
+    INTELLIGENT_LOG_NAME="${CONFIG_TYPE}-fallback"
 fi
 
-# Create log directory
-LOG_DIR="logs/${METHOD}-${DATASET}"
+# Create timestamp for unique log files
+TIMESTAMP=$(date +"%Y%m%d-%H%M%S")
+
+# Create log directory with method-dataset structure
+LOG_DIR="logs/${INTELLIGENT_LOG_NAME}"
 mkdir -p "$LOG_DIR"
 
-# Create unique log file name with timestamp
-LOG_FILE="${LOG_DIR}/${METHOD}-${DATASET}-${TIMESTAMP}.log"
+# Create descriptive log file name
+LOG_FILE="${LOG_DIR}/${INTELLIGENT_LOG_NAME}-${TIMESTAMP}.log"
 
-echo "Logs will be stored in: $LOG_FILE"
-echo "Using config file: $CONFIG"
+# =============================================================================
+# TRAINING EXECUTION
+# =============================================================================
+echo "============================================================================="
+echo "NANOGPT TRAINING WITH ZERO-ORDER OPTIMIZATION"
+echo "============================================================================="
+echo "Config type: $CONFIG_TYPE"
+echo "Config file: $CONFIG"
+echo "Training script: $SCRIPT"
+echo "Execution mode: $MODE"
+echo ""
+echo "📁 Log directory: $LOG_DIR"
+echo "📄 Log file: $LOG_FILE"
+echo ""
+echo "Log naming breakdown:"
+echo "  - Intelligent name: $INTELLIGENT_LOG_NAME"
+echo "  - Timestamp: $TIMESTAMP"
+echo "============================================================================="
 
-# Set up the training command
 if [ "$MODE" = "single" ]; then
     # Single GPU training
-    echo "Running on single GPU"
+    echo "Starting single GPU training..."
+    python $SCRIPT $CONFIG 2>&1 | tee "$LOG_FILE"
     
-    # Use the appropriate training script based on method
-    if [ "$METHOD" = "adam" ] || [ "$METHOD" = "sgd" ]; then
-        # For Adam or SGD, use the standard train.py script
-        echo "Using standard PyTorch optimization with train.py"
-        python train.py $CONFIG --batch_size=32 --compile=True --dataset=$DATASET 2>&1 | tee "$LOG_FILE"
-    elif [ "$METHOD" = "lozo" ] || [ "$METHOD" = "lozom" ]; then
-        # For LOZO methods, use lozo_train.py
-        echo "Using LOZO optimization with lozo_train.py"
-        python lozo_train.py $CONFIG --batch_size=32 --compile=True --dataset=$DATASET 2>&1 | tee "$LOG_FILE"
-    elif [ "$METHOD" = "svdlozo" ]; then
-        # For SVD-LOZO method, use lozo_train.py
-        echo "Using SVD-LOZO optimization with lozo_train.py"
-        python lozo_train.py $CONFIG --batch_size=32 --compile=True --dataset=$DATASET 2>&1 | tee "$LOG_FILE"
-    elif [ "$METHOD" = "mezo" ] || [ "$METHOD" = "mezom" ]; then
-        # For MeZO methods, use mezo_train.py
-        echo "Using MeZO optimization with mezo_train.py"
-        python mezo_train.py $CONFIG --batch_size=32 --compile=True --dataset=$DATASET 2>&1 | tee "$LOG_FILE"
-    elif [ "$METHOD" = "dimezo" ]; then
-        # For DiMeZO method, use lozo_train.py
-        echo "Using DiMeZO optimization with lozo_train.py"
-        python lozo_train.py $CONFIG --batch_size=32 --compile=True --dataset=$DATASET 2>&1 | tee "$LOG_FILE"
-    elif [ "$METHOD" = "dilozo" ]; then
-        # For DiLoZO method, use lozo_train.py
-        echo "Using DiLoZO optimization with lozo_train.py"
-        python lozo_train.py $CONFIG --batch_size=32 --compile=True --dataset=$DATASET 2>&1 | tee "$LOG_FILE"
-    else
-        echo "Invalid method. Use 'lozo', 'lozom', 'svdlozo', 'mezo', 'mezom', 'dimezo', 'dilozo', 'adam', or 'sgd'"
-        exit 1
-    fi
 elif [ "$MODE" = "multi" ]; then
     # Multi-GPU training with DDP
     NUM_GPUS=$(nvidia-smi --list-gpus | wc -l)
-    echo "Running on $NUM_GPUS GPUs"
+    echo "Starting multi-GPU training on $NUM_GPUS GPUs..."
+    torchrun --standalone --nproc_per_node=$NUM_GPUS $SCRIPT $CONFIG 2>&1 | tee "$LOG_FILE"
     
-    # Use the appropriate training script based on method
-    if [ "$METHOD" = "adam" ] || [ "$METHOD" = "sgd" ]; then
-        # For Adam or SGD, use the standard train.py script
-        echo "Using standard PyTorch optimization with train.py"
-        torchrun --standalone --nproc_per_node=$NUM_GPUS train.py $CONFIG --dataset=$DATASET 2>&1 | tee "$LOG_FILE"
-    elif [ "$METHOD" = "lozo" ] || [ "$METHOD" = "lozom" ]; then
-        # For LOZO methods, use lozo_train.py
-        echo "Using LOZO optimization with lozo_train.py"
-        torchrun --standalone --nproc_per_node=$NUM_GPUS lozo_train.py $CONFIG --dataset=$DATASET 2>&1 | tee "$LOG_FILE"
-    elif [ "$METHOD" = "svdlozo" ]; then
-        # For SVD-LOZO method, use lozo_train.py
-        echo "Using SVD-LOZO optimization with lozo_train.py"
-        torchrun --standalone --nproc_per_node=$NUM_GPUS lozo_train.py $CONFIG --dataset=$DATASET 2>&1 | tee "$LOG_FILE"
-    elif [ "$METHOD" = "mezo" ] || [ "$METHOD" = "mezom" ]; then
-        # For MeZO methods, use mezo_train.py
-        echo "Using MeZO optimization with mezo_train.py"
-        torchrun --standalone --nproc_per_node=$NUM_GPUS mezo_train.py $CONFIG --dataset=$DATASET 2>&1 | tee "$LOG_FILE"
-    elif [ "$METHOD" = "dimezo" ]; then
-        # For DiMeZO method, use lozo_train.py
-        echo "Using DiMeZO optimization with lozo_train.py"
-        torchrun --standalone --nproc_per_node=$NUM_GPUS lozo_train.py $CONFIG --batch_size=32 --compile=True --dataset=$DATASET 2>&1 | tee "$LOG_FILE"
-    elif [ "$METHOD" = "dilozo" ]; then
-        # For DiLoZO method, use lozo_train.py
-        echo "Using DiLoZO optimization with lozo_train.py"
-        torchrun --standalone --nproc_per_node=$NUM_GPUS lozo_train.py $CONFIG --batch_size=32 --compile=True --dataset=$DATASET 2>&1 | tee "$LOG_FILE"
-    else
-        echo "Invalid method. Use 'lozo', 'lozom', 'svdlozo', 'mezo', 'mezom', 'dimezo', 'dilozo', 'adam', or 'sgd'"
-        exit 1
-    fi
 else
-    echo "Invalid mode. Use 'single' or 'multi'"
+    echo "Error: Invalid mode '$MODE'"
     exit 1
-fi 
+fi
+
+echo "============================================================================="
+echo "Training completed. Log saved to: $LOG_FILE"
+echo "=============================================================================" 

@@ -18,8 +18,8 @@ KronZO addresses the memory limitations of full-rank zero-order methods (like Me
 
 For each matrix parameter W of shape (d_out, d_in):
 
-1. **Factorization**: Choose dimensions (m1, n1, m2, n2) such that m1×n1 = d_out and m2×n2 = d_in
-2. **Sampling**: Sample A ~ N(0, I) of shape (m1, m2) and B ~ N(0, I) of shape (n1, n2)
+1. **Factorization**: Choose dimensions (m1, m2, n1, n2) such that m1×m2 = d_out and n1×n2 = d_in
+2. **Sampling**: Sample A ~ N(0, I) of shape (m1, n1) and B ~ N(0, I) of shape (m2, n2)
 3. **Kronecker Product**: Compute Z = A ⊗ B (shape d_out × d_in)
 4. **Perturbation**: W ← W + ε × Z
 5. **Gradient Estimation**: Use finite differences: g = (f(θ + εZ) - f(θ - εZ))/(2ε)
