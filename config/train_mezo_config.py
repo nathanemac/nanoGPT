@@ -9,7 +9,7 @@ import torch
 # =============================================================================
 # TRAINING METHOD SELECTION
 # =============================================================================
-train_method = 'mezo'  # OPTIONS: 'mezo', 'mezom', 'dimezo'
+train_method = 'dimezo'  # OPTIONS: 'mezo', 'mezom', 'dimezo'
 
 # =============================================================================
 # DATASET AND MODEL SELECTION
@@ -64,7 +64,7 @@ bias = False     # Use bias in LayerNorm and Linear layers
 # OPTIMIZER SETTINGS
 # =============================================================================
 learning_rate = 1e-3  # Maximum learning rate
-max_iters = 5000      # Total number of training iterations
+max_iters = 200      # Total number of training iterations
 weight_decay = 1e-1   # L2 regularization strength
 
 # Standard optimizer parameters (used as fallback)
@@ -85,7 +85,7 @@ zo_q = 1             # Number of gradient estimates to average (for MeZO/SVD-LoZ
 # =============================================================================
 # MOMENTUM SETTINGS (for MeZO-M)
 # =============================================================================
-use_momentum = False # Enable momentum for MeZO-M
+use_momentum = True # Enable momentum for MeZO-M
                      # OPTIONS: True (MeZO-M), False (standard MeZO)
 momentum_beta = 0.9  # Momentum coefficient
                      # OPTIONS: 0.9 (default), 0.95 (stronger momentum), 0.8 (weaker)
@@ -93,7 +93,7 @@ momentum_beta = 0.9  # Momentum coefficient
 # =============================================================================
 # DIRECTIONAL SELECTION PARAMETERS (for DiMeZO)
 # =============================================================================
-directional_q = 10           # Number of directions to try in DiMeZO
+directional_q = 20           # Number of directions to try in DiMeZO
                              # OPTIONS: 5 (fast), 10 (default), 20 (thorough)
 
 dimezo_direct_movement = False  # Movement strategy for DiMeZO

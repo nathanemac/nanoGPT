@@ -64,7 +64,7 @@ bias = False     # Use bias in LayerNorm and Linear layers
 # OPTIMIZER SETTINGS
 # =============================================================================
 learning_rate = 1e-3  # Maximum learning rate
-max_iters = 5000      # Total number of training iterations
+max_iters = 50      # Total number of training iterations
 weight_decay = 1e-1   # L2 regularization strength
 
 # Standard optimizer parameters (used as fallback)
@@ -85,7 +85,7 @@ zo_q = 1             # Number of gradient estimates to average (for LoZO/SVD-LoZ
 # =============================================================================
 # LOW-RANK PARAMETERS
 # =============================================================================
-rank_r = 4           # Fixed rank for U and V matrices
+rank_r = 2           # Fixed rank for U and V matrices
                      # OPTIONS: 1-4 (small), 8-16 (medium), 32+ (large)
 
 step_interval = 50   # Interval for updating V matrices (every ν steps)
@@ -94,7 +94,7 @@ step_interval = 50   # Interval for updating V matrices (every ν steps)
 # =============================================================================
 # RANK-ADAPTIVE SETTINGS
 # =============================================================================
-rank_adaptive = True        # Enable adaptive rank scheduling
+rank_adaptive = False        # Enable adaptive rank scheduling
                              # OPTIONS: True (adaptive), False (fixed rank_r)
 
 min_rank = 2                 # Minimum rank for adaptive scheduling

@@ -95,7 +95,7 @@ step_interval = 50               # Interval for updating B matrices (every ν st
 # =============================================================================
 # MOMENTUM SETTINGS (for KronZO with momentum)
 # =============================================================================
-use_momentum = True # Enable momentum for KronZO
+use_momentum = False # Enable momentum for KronZO
                      # OPTIONS: True (KronZO-M), False (standard KronZO)
 momentum_beta = 0.9  # Momentum coefficient
                      # OPTIONS: 0.9 (default), 0.95 (stronger momentum), 0.8 (weaker)
