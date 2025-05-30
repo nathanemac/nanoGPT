@@ -57,14 +57,14 @@ n_embd = 384     # Embedding dimension
 # n_head = 16
 # n_embd = 1024
 
-dropout = 0.1    # Dropout rate (0.0 for pretraining, 0.1+ for finetuning)
+dropout = 0.0    # Dropout rate (0.0 for pretraining, 0.1+ for finetuning)
 bias = False     # Use bias in LayerNorm and Linear layers
 
 # =============================================================================
 # OPTIMIZER SETTINGS
 # =============================================================================
 learning_rate = 1e-3  # Maximum learning rate
-max_iters = 5000      # Total number of training iterations
+max_iters = 7000      # Total number of training iterations
 weight_decay = 1e-1   # L2 regularization strength
 
 # Standard optimizer parameters (used as fallback)
@@ -95,7 +95,7 @@ step_interval = 50               # Interval for updating B matrices (every ν st
 # =============================================================================
 # MOMENTUM SETTINGS (for KronZO with momentum)
 # =============================================================================
-use_momentum = False # Enable momentum for KronZO
+use_momentum = True # Enable momentum for KronZO
                      # OPTIONS: True (KronZO-M), False (standard KronZO)
 momentum_beta = 0.9  # Momentum coefficient
                      # OPTIONS: 0.9 (default), 0.95 (stronger momentum), 0.8 (weaker)
@@ -103,7 +103,7 @@ momentum_beta = 0.9  # Momentum coefficient
 # =============================================================================
 # DIRECTIONAL SELECTION PARAMETERS (for DiKronZO)
 # =============================================================================
-directional_q = 50           # Number of directions to try in DiKronZO
+directional_q = 100           # Number of directions to try in DiKronZO
                              
 
 # =============================================================================
@@ -160,7 +160,7 @@ use_full_svd = False        # Use full SVD vs randomized SVD (not used by KronZO
 # =============================================================================
 decay_lr = True      # Whether to decay learning rate
 warmup_iters = 500   # Number of warmup iterations
-lr_decay_iters = 5000  # Should be ~= max_iters for cosine decay
+lr_decay_iters = 7000  # Should be ~= max_iters for cosine decay
 min_lr = 1e-4        # Minimum learning rate (should be ~= learning_rate/10)
 
 # =============================================================================

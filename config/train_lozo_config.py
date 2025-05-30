@@ -64,8 +64,8 @@ bias = False     # Use bias in LayerNorm and Linear layers
 # OPTIMIZER SETTINGS
 # =============================================================================
 learning_rate = 1e-3  # Maximum learning rate
-max_iters = 50      # Total number of training iterations
-weight_decay = 1e-1   # L2 regularization strength
+max_iters = 10000      # Total number of training iterations
+weight_decay = 0.0   # !!!!!! set to 0 !!!!! L2 regularization strength
 
 # Standard optimizer parameters (used as fallback)
 beta1 = 0.9          # Adam beta1 (momentum coefficient)
@@ -97,7 +97,7 @@ step_interval = 50   # Interval for updating V matrices (every ν steps)
 rank_adaptive = False        # Enable adaptive rank scheduling
                              # OPTIONS: True (adaptive), False (fixed rank_r)
 
-min_rank = 2                 # Minimum rank for adaptive scheduling
+min_rank = 1                 # Minimum rank for adaptive scheduling
                              # OPTIONS: 1 (start small), 2-4 (conservative start)
 
 max_rank = 16                # Maximum rank for adaptive scheduling
@@ -119,8 +119,13 @@ momentum_beta = 0.9  # Momentum coefficient
 # =============================================================================
 # DIRECTIONAL SELECTION PARAMETERS (for DiLoZO)
 # =============================================================================
-directional_q = 50           # Number of directions to try in DiLoZO
-                             # OPTIONS: 5 (fast), 10 (default), 20 (thorough)
+directional_q = 200           # Number of directions to try in DiLoZO 
+                             
+
+use_improved_directional = False   # Use improved directional search (more expensive but more accurate)
+use_dilozo_adaptive_eps = False   # Use adaptive epsilon based on success rate for DiLoZO
+                                 # OPTIONS: True (adjust epsilon based on success rate), False (use fixed epsilon)
+                                 # NOTE: Adaptive adjusts epsilon up/down based on finding successful directions
 
 # =============================================================================
 # DIMEZO SPECIFIC PARAMETERS
@@ -174,7 +179,7 @@ kron_max_factor = 32             # Maximum factor size for 'fixed_factor' strate
 # =============================================================================
 decay_lr = True      # Whether to decay learning rate
 warmup_iters = 500   # Number of warmup iterations
-lr_decay_iters = 5000  # Should be ~= max_iters for cosine decay
+lr_decay_iters = 10000  # Should be ~= max_iters for cosine decay
 min_lr = 1e-4        # Minimum learning rate (should be ~= learning_rate/10)
 
 # =============================================================================

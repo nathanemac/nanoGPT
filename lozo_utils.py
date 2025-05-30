@@ -485,7 +485,7 @@ def dilozo_step(model, X, Y, v_dict, step, zo_random_seed, directional_q_val, zo
     3. Evaluate f(θ + ε*U_i V^T) for each direction i
     4. Select U_best V^T = argmin_i f(θ + ε*U_i V^T) (direction that gives lowest loss)
     5. Success = min_loss < baseline_loss
-    6. Estimate directional derivative: c = [f(θ + ε*U_best V^T) - f(θ - ε*U_best V^T)]/(2ε)
+    6. Estimate directional derivative: c = [f(θ + ε*U_i V^T) - f(θ - ε*U_i V^T)]/(2ε)
        This gives the projected gradient ∇f(θ) · (U_best V^T) along the best direction.
        Since U_best V^T decreases loss, c < 0, so θ ← θ - α * c * U_best V^T moves toward U_best V^T.
 
@@ -507,14 +507,101 @@ def dilozo_step(model, X, Y, v_dict, step, zo_random_seed, directional_q_val, zo
     best_u_seed = None
 
     for i in range(current_directional_q):
-        direction_u_seed = zo_random_seed + i
-        dilozo_perturb_parameters(model, v_dict, direction_u_seed, step, zo_eps, step_interval, rank_r, scaling_factor=1, eps=eps, current_rank=current_rank)
-        current_loss = zo_forward(model, X, Y, ctx_obj)
+        # Generate unique seed to avoid collisions across steps
+        # Use a large multiplier to ensure separation
+        direction_u_seed = zo_random_seed + i * 1000007  # Large prime to avoid patterns
+        
+        # Pre-generate all random tensors for this direction to ensure consistency
+        # between gradient estimation and candidate evaluation
+        torch.manual_seed(direction_u_seed)
+        
+        # Generate random tensors using the same logic as dilozo_perturb_parameters
+        random_tensors = {}
+        for name, param in model.named_parameters():
+            if param.requires_grad:
+                clean_name = name
+                if name.startswith('_orig_mod.'):
+                    clean_name = name[len('_orig_mod.'):]
+                
+                if param.ndim >= 2:
+                    if clean_name in v_dict:
+                        # For low-rank: generate U_i (same as dilozo_perturb_parameters)
+                        random_tensors[name] = torch.randn(param.size(0), int(current_rank), device=param.device, dtype=param.dtype)
+                    else:
+                        # For matrices without V: generate Z_i
+                        random_tensors[name] = torch.normal(mean=0, std=1, size=param.size(), device=param.device, dtype=param.dtype)
+                else:
+                    # For vectors: generate Z_i
+                    random_tensors[name] = torch.normal(mean=0, std=1, size=param.size(), device=param.device, dtype=param.dtype)
+        
+        # Phase 1: Compute gradient coefficient using the exact same random tensors
+        # We need to manually apply perturbations to ensure consistency
+        
+        # Apply +eps perturbation manually
+        for name, param in model.named_parameters():
+            if param.requires_grad:
+                clean_name = name
+                if name.startswith('_orig_mod.'):
+                    clean_name = name[len('_orig_mod.'):]
+                
+                if param.ndim >= 2:
+                    if clean_name in v_dict:
+                        u_i = random_tensors[name]
+                        v_i = v_dict[clean_name]
+                        perturbation = u_i @ v_i.t()
+                    else:
+                        perturbation = random_tensors[name]
+                else:
+                    perturbation = random_tensors[name]
+                
+                param.data = param.data + eps * perturbation
+        
+        f_plus = zo_forward(model, X, Y, ctx_obj)
+        
+        # Apply -2*eps perturbation (from +eps to -eps)
+        for name, param in model.named_parameters():
+            if param.requires_grad:
+                clean_name = name
+                if name.startswith('_orig_mod.'):
+                    clean_name = name[len('_orig_mod.'):]
+                
+                if param.ndim >= 2:
+                    if clean_name in v_dict:
+                        u_i = random_tensors[name]
+                        v_i = v_dict[clean_name]
+                        perturbation = u_i @ v_i.t()
+                    else:
+                        perturbation = random_tensors[name]
+                else:
+                    perturbation = random_tensors[name]
+                
+                param.data = param.data - 2 * eps * perturbation
+        
+        f_minus = zo_forward(model, X, Y, ctx_obj)
+        
+        # Reset to original parameters
+        for name, param in model.named_parameters():
+            if param.requires_grad:
+                clean_name = name
+                if name.startswith('_orig_mod.'):
+                    clean_name = name[len('_orig_mod.'):]
+                
+                if param.ndim >= 2:
+                    if clean_name in v_dict:
+                        u_i = random_tensors[name]
+                        v_i = v_dict[clean_name]
+                        perturbation = u_i @ v_i.t()
+                    else:
+                        perturbation = random_tensors[name]
+                else:
+                    perturbation = random_tensors[name]
+                
+                param.data = param.data + eps * perturbation
+
+        current_loss = f_plus
         if current_loss < best_loss_val:
             best_loss_val = current_loss
             best_u_seed = direction_u_seed
-        # Reset parameters to original state before trying next direction
-        dilozo_perturb_parameters(model, v_dict, direction_u_seed, step, zo_eps, step_interval, rank_r, scaling_factor=-1, eps=eps, current_rank=current_rank)
 
     success = best_loss_val < baseline_loss
 
@@ -542,7 +629,7 @@ def dilozo_step(model, X, Y, v_dict, step, zo_random_seed, directional_q_val, zo
     # We are currently at (theta - eps*UVT). Add back 1*eps*UVT to get to theta
     dilozo_perturb_parameters(model, v_dict, best_u_seed, step, zo_eps, step_interval, rank_r, scaling_factor=1, eps=eps, current_rank=current_rank)
 
-    return best_loss_val, grad_coeff, best_u_seed, success
+    return best_loss_val, grad_coeff, best_u_seed, success, baseline_loss
 
 def dilozo_update(model, optimizer, grad_coeff, best_u_seed, v_dict, step, lr, rank_r, weight_decay, master_process, named_parameters_to_optim=None, current_rank=None):
     """Update model parameters using DiLoZO.
@@ -688,3 +775,266 @@ def dilozo_update_momentum(model, optimizer, grad_coeff, best_u_seed, v_dict, ex
             param_data_float32 = param_data_float32 - update_val
             
         param.data = param_data_float32.to(original_dtype)
+
+def improved_dilozo_step(model, X, Y, v_dict, step, zo_random_seed, directional_q_val, zo_eps, step_interval, rank_r, lr, master_process, ctx_obj, eps=None, current_rank=None, weight_decay=0.0):
+    """Estimate gradient using Improved DiLoZO (Directional Low-Rank Zero-Order).
+    
+    Improved Algorithm:
+    1. Start with best_loss = f(θ) and best_candidate = θ (current parameters)
+    2. For each direction i = 1, ..., q:
+       a. Generate random U_i V^T direction 
+       b. Compute gradient coefficient: c_i = [f(θ + ε*U_i V^T) - f(θ - ε*U_i V^T)]/(2ε)
+       c. Compute candidate update: θ_candidate = θ - (α/r) * c_i * U_i V^T  
+       d. Evaluate f(θ_candidate) (loss at actual proposed update)
+       e. Keep this candidate if f(θ_candidate) < best_loss
+    3. If no improvement found, stay at θ. Otherwise, move to best_candidate.
+    
+    This method is ~3x more expensive per direction but more conservative and accurate.
+
+    Args:
+        lr: Learning rate (needed to compute actual candidate updates)
+        directional_q_val: Number of directions to try
+    
+    Returns:
+        best_loss: Best loss found (could be current loss if no improvement)
+        best_grad_coeff: Gradient coefficient of best direction (0.0 if no improvement)
+        best_u_seed: Seed of best direction (zo_random_seed if no improvement)
+        success: Whether any improvement was found
+    """
+    current_directional_q = directional_q_val
+
+    if eps is None:
+        eps = zo_eps
+    if current_rank is None:
+        current_rank = rank_r
+    if current_rank == 0:  # Avoid issues with rank 0
+        current_rank = 1
+
+    # Initialize with current state (conservative approach)
+    baseline_loss = zo_forward(model, X, Y, ctx_obj)
+    best_loss = baseline_loss
+    best_grad_coeff = 0.0
+    best_u_seed = zo_random_seed  # Default to original seed if no improvement
+    
+    for i in range(current_directional_q):
+        # Generate unique seed to avoid collisions across steps
+        # Use a large multiplier to ensure separation
+        direction_u_seed = zo_random_seed + i * 1000007  # Large prime to avoid patterns
+        
+        # Pre-generate all random tensors for this direction to ensure consistency
+        # between gradient estimation and candidate evaluation
+        torch.manual_seed(direction_u_seed)
+        
+        # Generate random tensors using the same logic as dilozo_perturb_parameters
+        random_tensors = {}
+        for name, param in model.named_parameters():
+            if param.requires_grad:
+                clean_name = name
+                if name.startswith('_orig_mod.'):
+                    clean_name = name[len('_orig_mod.'):]
+                
+                if param.ndim >= 2:
+                    if clean_name in v_dict:
+                        # For low-rank: generate U_i (same as dilozo_perturb_parameters)
+                        random_tensors[name] = torch.randn(param.size(0), int(current_rank), device=param.device, dtype=param.dtype)
+                    else:
+                        # For matrices without V: generate Z_i
+                        random_tensors[name] = torch.normal(mean=0, std=1, size=param.size(), device=param.device, dtype=param.dtype)
+                else:
+                    # For vectors: generate Z_i
+                    random_tensors[name] = torch.normal(mean=0, std=1, size=param.size(), device=param.device, dtype=param.dtype)
+        
+        # Phase 1: Compute gradient coefficient using the exact same random tensors
+        # We need to manually apply perturbations to ensure consistency
+        
+        # Apply +eps perturbation manually
+        for name, param in model.named_parameters():
+            if param.requires_grad:
+                clean_name = name
+                if name.startswith('_orig_mod.'):
+                    clean_name = name[len('_orig_mod.'):]
+                
+                if param.ndim >= 2:
+                    if clean_name in v_dict:
+                        u_i = random_tensors[name]
+                        v_i = v_dict[clean_name]
+                        perturbation = u_i @ v_i.t()
+                    else:
+                        perturbation = random_tensors[name]
+                else:
+                    perturbation = random_tensors[name]
+                
+                param.data = param.data + eps * perturbation
+        
+        f_plus = zo_forward(model, X, Y, ctx_obj)
+        
+        # Apply -2*eps perturbation (from +eps to -eps)
+        for name, param in model.named_parameters():
+            if param.requires_grad:
+                clean_name = name
+                if name.startswith('_orig_mod.'):
+                    clean_name = name[len('_orig_mod.'):]
+                
+                if param.ndim >= 2:
+                    if clean_name in v_dict:
+                        u_i = random_tensors[name]
+                        v_i = v_dict[clean_name]
+                        perturbation = u_i @ v_i.t()
+                    else:
+                        perturbation = random_tensors[name]
+                else:
+                    perturbation = random_tensors[name]
+                
+                param.data = param.data - 2 * eps * perturbation
+        
+        f_minus = zo_forward(model, X, Y, ctx_obj)
+        
+        # Reset to original parameters
+        for name, param in model.named_parameters():
+            if param.requires_grad:
+                clean_name = name
+                if name.startswith('_orig_mod.'):
+                    clean_name = name[len('_orig_mod.'):]
+                
+                if param.ndim >= 2:
+                    if clean_name in v_dict:
+                        u_i = random_tensors[name]
+                        v_i = v_dict[clean_name]
+                        perturbation = u_i @ v_i.t()
+                    else:
+                        perturbation = random_tensors[name]
+                else:
+                    perturbation = random_tensors[name]
+                
+                param.data = param.data + eps * perturbation
+
+        # Compute gradient coefficient
+        grad_coeff = ((f_plus - f_minus) / (2 * eps)).item()
+        
+        # Phase 2: Apply actual candidate update and evaluate it (1 function evaluation)
+        effective_lr = lr / current_rank  # LoZO rank scaling
+        update_amounts = {}
+        
+        for name, param in model.named_parameters():
+            if param.requires_grad:
+                clean_name = name
+                if name.startswith('_orig_mod.'):
+                    clean_name = name[len('_orig_mod.'):]
+                
+                is_weight = "bias" not in clean_name and "layer_norm" not in clean_name and "layernorm" not in clean_name
+                
+                if param.ndim >= 2:
+                    if clean_name in v_dict:
+                        u_i = random_tensors[name]
+                        v_i = v_dict[clean_name]
+                        gradient_update = effective_lr * grad_coeff * (u_i @ v_i.t())
+                    else:
+                        z_i = random_tensors[name]
+                        gradient_update = effective_lr * grad_coeff * z_i
+                else:
+                    z_i = random_tensors[name]
+                    gradient_update = lr * grad_coeff * z_i
+                
+                if is_weight and weight_decay > 0:
+                    total_update = gradient_update + weight_decay * lr * param.data
+                else:
+                    total_update = gradient_update
+                
+                update_amounts[name] = total_update
+                param.data = param.data - total_update
+        
+        # Evaluate at candidate location
+        f_candidate = zo_forward(model, X, Y, ctx_obj)
+        
+        # Keep if better than current best
+        if f_candidate < best_loss:
+            best_loss = f_candidate
+            best_grad_coeff = grad_coeff
+            best_u_seed = direction_u_seed
+        
+        # Reverse the update to restore original parameters
+        for name, param in model.named_parameters():
+            if param.requires_grad and name in update_amounts:
+                param.data = param.data + update_amounts[name]
+
+    # Determine success
+    success = (best_loss < baseline_loss)
+    
+    if not success and master_process:
+        print(f"Improved DiLoZO: No improving direction found out of {current_directional_q}. Staying at current position.")
+    
+    return best_loss, best_grad_coeff, best_u_seed, success, baseline_loss
+
+def improved_dilozo_update(model, optimizer, grad_coeff, best_u_seed, v_dict, step, lr, rank_r, weight_decay, master_process, success, named_parameters_to_optim=None, current_rank=None):
+    """Update model parameters using Improved DiLoZO.
+    
+    If success=True: Apply the update θ ← θ - (α/r) * grad_coeff * U_best V_best^T
+    If success=False: Do nothing (stay at current parameters)
+    
+    Args:
+        success: Whether an improving direction was found
+    """
+    if not success:
+        # No improvement found, stay at current parameters
+        if master_process and step % 100 == 0:  # Reduce log frequency 
+            print(f"Improved DiLoZO: No update applied (no improvement found)")
+        return
+        
+    # Apply the update (same as regular dilozo_update)
+    if current_rank is None:
+        current_rank = rank_r
+    if current_rank == 0:
+        if master_process: 
+            print("Warning: Improved DiLoZO update called with current_rank=0. Skipping update.")
+        return
+
+    torch.manual_seed(best_u_seed)  # Regenerate U_best
+
+    if named_parameters_to_optim is None:
+        named_parameters_to_optim = [(name if not name.startswith('_orig_mod.') else name[len('_orig_mod.'):], param)
+                                     for name, param in model.named_parameters() if param.requires_grad]
+
+    # CRITICAL FIX: Scale learning rate by rank for LOZO low-rank updates
+    effective_lr = lr / current_rank
+    
+    # Debug logging only on first step
+    if step == 0 and master_process:
+        print(f"Improved DiLoZO: Applying update with effective_lr = {effective_lr:.6f} (lr={lr:.6f} / rank={current_rank})")
+        print(f"projected_grad = {grad_coeff}")
+    
+    for clean_name, param in named_parameters_to_optim:
+        is_weight = "bias" not in clean_name and "layer_norm" not in clean_name and "layernorm" not in clean_name
+        
+        if param.ndim >= 2:
+            # Check if this parameter has a V matrix before accessing
+            if clean_name in v_dict:
+                u_best = torch.randn(param.size(0), int(current_rank), device=param.device, dtype=torch.float32)  # U in float32
+                v_best = v_dict[clean_name].float()  # V in float32
+                
+                # Perform update calculation in float32
+                update_term = effective_lr * grad_coeff * (u_best @ v_best.t())
+                
+                if is_weight and weight_decay > 0:
+                    param_data_float32 = param.data.float() - (update_term + weight_decay * lr * param.data.float())
+                else:
+                    param_data_float32 = param.data.float() - update_term
+            else:
+                # For matrices without V, use Gaussian update like vectors
+                z_best = torch.normal(mean=0, std=1, size=param.size(), device=param.device, dtype=torch.float32)  # Z in float32
+                update_term_mat = effective_lr * grad_coeff * z_best
+                
+                if is_weight and weight_decay > 0:
+                    param_data_float32 = param.data.float() - (update_term_mat + weight_decay * lr * param.data.float())
+                else:
+                    param_data_float32 = param.data.float() - update_term_mat
+        else:
+            # For vectors (biases), use full lr (no rank scaling)
+            z_best = torch.normal(mean=0, std=1, size=param.size(), device=param.device, dtype=torch.float32)  # Use float32 for Z
+            update_term_vec = lr * grad_coeff * z_best
+            
+            if is_weight and weight_decay > 0:
+                param_data_float32 = param.data.float() - (update_term_vec + weight_decay * lr * param.data.float())
+            else:
+                param_data_float32 = param.data.float() - update_term_vec
+        
+        param.data = param_data_float32.to(param.data.dtype)  # Convert back to original dtype

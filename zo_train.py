@@ -18,7 +18,8 @@ from lozo_utils import (
     get_current_rank, lowrank_zo_perturb_parameters, lowrank_zo_step, 
     lowrank_zo_update, lowrank_zo_update_direct, lowrank_zo_update_momentum,
     svdlozo_perturb_parameters, svdlozo_step, svdlozo_update, svdlozo_update_direct,
-    dilozo_perturb_parameters, dilozo_step, dilozo_update, dilozo_update_momentum
+    dilozo_perturb_parameters, dilozo_step, dilozo_update, dilozo_update_momentum,
+    improved_dilozo_step, improved_dilozo_update
 )
 from mezo_utils import (
     mezo_perturb_parameters, mezo_step, mezo_update, mezo_update_momentum,
@@ -81,6 +82,8 @@ svd_max_rank = 16
 use_full_svd = False
 train_method = 'adam' # Default training method, WILL be overridden by method-specific config
 directional_q = 10
+use_improved_directional = False  # Use improved directional search (more expensive but more accurate)
+use_dilozo_adaptive_eps = True   # Use adaptive epsilon based on success rate for DiLoZO
 dimezo_direct_movement = False
 kron_max_factor = 32
 kron_strategy = 'approx_square'
@@ -420,6 +423,15 @@ while True:
                 current_rank = get_current_rank(iter_num, max_iters, min_rank, max_rank, rank_adaptive, rank_r)
                 wandb_dict["rank"] = current_rank
                 wandb_dict["rank_progress"] = min(iter_num / max_iters, 1.0)
+            # Add DiLoZO-specific success rate and epsilon to wandb
+            if train_method == 'dilozo' and use_dilozo_adaptive_eps and hasattr(get_batch, 'dilozo_success_history'):
+                if len(get_batch.dilozo_success_history) > 0:
+                    dilozo_success_rate = sum(get_batch.dilozo_success_history) / len(get_batch.dilozo_success_history)
+                    wandb_dict.update({
+                        "dilozo/success_rate": dilozo_success_rate,
+                        "dilozo/epsilon": get_batch.dilozo_adaptive_eps,
+                        "dilozo/window_size": len(get_batch.dilozo_success_history)
+                    })
             wandb.log(wandb_dict)
         if losses_est['val'] < best_val_loss or always_save_checkpoint:
             best_val_loss = losses_est['val']
@@ -459,31 +471,29 @@ while True:
                 raw_model, X, Y, v_dict, step, current_zo_seed, 
                 effective_zo_eps_to_use, step_interval, rank_r, zo_q, ctx, current_rank=current_rank_val
             )
-            accumulated_loss += loss_val / gradient_accumulation_steps  # Proper loss accumulation
+            accumulated_loss += loss_val  # Don't divide here - logging handles it
             if zo_q == 1:
                 projected_grad = projected_or_dict_grad
                 if micro_step == 0:
-                    accumulated_projected_grad = projected_grad / gradient_accumulation_steps
+                    accumulated_projected_grad = projected_grad
                 else:
-                    accumulated_projected_grad += projected_grad / gradient_accumulation_steps
+                    accumulated_projected_grad += projected_grad
             else:
                 grad_dict = projected_or_dict_grad
                 if micro_step == 0:
-                    accumulated_grad_dict = {name: g / gradient_accumulation_steps for name, g in grad_dict.items()}
+                    accumulated_grad_dict = {name: g for name, g in grad_dict.items()}
                 else:
                     for name, g in grad_dict.items():
-                        accumulated_grad_dict[name] += g / gradient_accumulation_steps
+                        accumulated_grad_dict[name] += g
             # Get next batch for next iteration (but not after the last micro-step)
             if micro_step < gradient_accumulation_steps - 1:
                 X, Y = get_batch('train')
-        loss = accumulated_loss  # Use properly accumulated loss
+        loss = accumulated_loss / gradient_accumulation_steps  # Average the accumulated losses
         if zo_q == 1:
             if train_method == 'lozom':
                 lowrank_zo_update_momentum(raw_model, optimizer, accumulated_projected_grad, first_zo_seed, v_dict, exp_avg_m, v_old_dict, step, lr, rank_r, step_interval, weight_decay, master_process, momentum_beta, current_rank=current_rank_val)
             else:
                 lowrank_zo_update(raw_model, optimizer, accumulated_projected_grad, first_zo_seed, v_dict, step, lr, rank_r, weight_decay, master_process, current_rank=current_rank_val)
-        else:
-            lowrank_zo_update_direct(raw_model, optimizer, accumulated_grad_dict, lr, weight_decay)
         # Add adaptive epsilon support for LOZO 
         if use_adaptive_eps and adaptive_eps_manager is not None:
             current_lr_for_eps_record = get_lr(iter_num) if decay_lr else learning_rate
@@ -511,24 +521,24 @@ while True:
             )
             if micro_step == 0:
                 named_params_for_update = current_named_params
-            accumulated_loss += loss_val / gradient_accumulation_steps  # Proper loss accumulation
+            accumulated_loss += loss_val  # Don't divide here - logging handles it
             if zo_q == 1:
                 projected_grad = projected_or_dict_grad
                 if micro_step == 0:
-                    accumulated_projected_grad = projected_grad / gradient_accumulation_steps
+                    accumulated_projected_grad = projected_grad
                 else:
-                    accumulated_projected_grad += projected_grad / gradient_accumulation_steps
+                    accumulated_projected_grad += projected_grad
             else:
                 grad_dict = projected_or_dict_grad
                 if micro_step == 0:
-                    accumulated_grad_dict = {name: g / gradient_accumulation_steps for name, g in grad_dict.items()}
+                    accumulated_grad_dict = {name: g for name, g in grad_dict.items()}
                 else:
                     for name, g in grad_dict.items():
-                        accumulated_grad_dict[name] += g / gradient_accumulation_steps
+                        accumulated_grad_dict[name] += g
             # Get next batch for next iteration (but not after the last micro-step)
             if micro_step < gradient_accumulation_steps - 1:
                 X, Y = get_batch('train')
-        loss = accumulated_loss  # Use properly accumulated loss
+        loss = accumulated_loss / gradient_accumulation_steps  # Average the accumulated losses
         if zo_q == 1:
             svdlozo_update(raw_model, optimizer, accumulated_projected_grad, first_zo_seed, step, lr, 
                            effective_zo_eps_to_use, svd_tau, svd_max_rank, use_full_svd, weight_decay, master_process, 
@@ -563,12 +573,12 @@ while True:
             # Get next batch for next iteration (but not after the last micro-step)
             if micro_step < gradient_accumulation_steps - 1:
                 X, Y = get_batch('train')
-            accumulated_loss += loss_val / gradient_accumulation_steps  # Proper loss accumulation
+            accumulated_loss += loss_val  # Don't divide here - logging handles it
             if micro_step == 0:
-                accumulated_projected_grad = projected_grad / gradient_accumulation_steps
+                accumulated_projected_grad = projected_grad
             else:
-                accumulated_projected_grad += projected_grad / gradient_accumulation_steps
-        loss = accumulated_loss  # Use properly accumulated loss
+                accumulated_projected_grad += projected_grad
+        loss = accumulated_loss / gradient_accumulation_steps  # Average the accumulated losses
         if train_method == 'mezom':
             mezo_update_momentum(raw_model, optimizer, accumulated_projected_grad, first_zo_seed, exp_avg_m, step, lr, weight_decay, master_process, momentum_beta, named_parameters_to_optim=named_params_for_update)
         else:
@@ -603,18 +613,18 @@ while True:
             # Get next batch for next iteration (but not after the last micro-step)
             if micro_step < gradient_accumulation_steps - 1:
                 X, Y = get_batch('train')
-            accumulated_loss += loss_val / gradient_accumulation_steps  # Proper loss accumulation
+            accumulated_loss += loss_val  # Don't divide here - logging handles it
             if micro_step == 0:
                 best_direction_seed_for_update = current_best_seed
                 if dimezo_direct_movement:
                      best_direction_for_update_dict = grad_or_direction
                 else:
-                    accumulated_projected_grad = grad_or_direction / gradient_accumulation_steps
+                    accumulated_projected_grad = grad_or_direction
                 first_microbatch_loss_val = loss_val
                 first_microbatch_success_val = success
             elif not dimezo_direct_movement :
-                accumulated_projected_grad += grad_or_direction / gradient_accumulation_steps
-        loss = accumulated_loss  # Use properly accumulated loss
+                accumulated_projected_grad += grad_or_direction
+        loss = accumulated_loss / gradient_accumulation_steps  # Average the accumulated losses
         if dimezo_direct_movement:
             dimezo_update(raw_model, optimizer, best_direction_for_update_dict, best_direction_seed_for_update, step, lr, weight_decay, master_process, direct_movement=True)
         else:
@@ -631,52 +641,426 @@ while True:
         step += 1
     elif train_method == 'dilozo':
         current_rank_val = get_current_rank(iter_num, max_iters, min_rank, max_rank, rank_adaptive, rank_r)
-        accumulated_grad_coeff_val = 0.0
-        best_u_seed_for_update = None
-        first_microbatch_loss_val = 0.0
-        first_microbatch_success_val = False
-        accumulated_loss = 0.0  # Properly accumulate loss
-        for micro_step in range(gradient_accumulation_steps):
-            current_zo_seed = np.random.randint(1000000000)
-            iter_loss_val, grad_coeff_val, current_best_u_seed, success_val = dilozo_step(
-                raw_model, X, Y, v_dict, step, current_zo_seed,
-                directional_q_val=directional_q, 
-                zo_eps=effective_zo_eps_to_use, 
-                step_interval=step_interval, rank_r=rank_r, 
-                master_process=master_process, ctx_obj=ctx,
-                eps=effective_zo_eps_to_use, 
-                current_rank=current_rank_val
-            )
-            # Get next batch for next iteration (but not after the last micro-step)
-            if micro_step < gradient_accumulation_steps - 1:
-                X, Y = get_batch('train')
-            accumulated_loss += iter_loss_val / gradient_accumulation_steps  # Proper loss accumulation
-            if micro_step == 0:
-                accumulated_grad_coeff_val = grad_coeff_val / gradient_accumulation_steps
-                best_u_seed_for_update = current_best_u_seed
-                first_microbatch_loss_val = iter_loss_val 
-                first_microbatch_success_val = success_val
-            else:
-                accumulated_grad_coeff_val += grad_coeff_val / gradient_accumulation_steps
-        loss = accumulated_loss  # Use properly accumulated loss
-        if use_momentum:
-            dilozo_update_momentum(raw_model, optimizer, accumulated_grad_coeff_val, best_u_seed_for_update, 
-                                   v_dict, exp_avg_m, step, lr, rank_r, 
-                                   weight_decay=weight_decay, master_process=master_process, beta1=momentum_beta, 
-                                   current_rank=current_rank_val)
+        
+        # DiLoZO-specific adaptive epsilon initialization
+        if use_dilozo_adaptive_eps:
+            # Initialize tracking if not already done
+            if not hasattr(get_batch, 'dilozo_success_history'):
+                get_batch.dilozo_success_history = []  # Store last 10 success rates
+                get_batch.dilozo_adaptive_eps = effective_zo_eps_to_use  # Store adaptive epsilon
+        
+        # Use the adaptive epsilon for DiLoZO if enabled, otherwise use standard epsilon
+        if use_dilozo_adaptive_eps and hasattr(get_batch, 'dilozo_adaptive_eps'):
+            dilozo_eps_to_use = get_batch.dilozo_adaptive_eps
         else:
-            dilozo_update(raw_model, optimizer, accumulated_grad_coeff_val, best_u_seed_for_update, 
-                          v_dict, step, lr, rank_r, 
-                          weight_decay=weight_decay, master_process=master_process, 
-                          current_rank=current_rank_val)
+            dilozo_eps_to_use = effective_zo_eps_to_use
+        
+        if use_improved_directional:
+            # Improved Directional with Proper Gradient Accumulation
+            print(f"Step {step}: Using IMPROVED DIRECTIONAL DiLoZO")
+            accumulated_best_seeds = []
+            accumulated_best_coeffs = []
+            accumulated_success = []  # Track which micro-batches were successful
+            any_success_overall = False
+            accumulated_loss = 0.0
+            
+            for micro_step in range(gradient_accumulation_steps):
+                print(f"  Micro-step {micro_step+1}/{gradient_accumulation_steps}: Testing improved directional...")
+                current_zo_seed = np.random.randint(1000000000)
+                
+                # Use improved directional search to find best direction for this micro-batch
+                iter_loss_val, grad_coeff_val, current_best_u_seed, success_val, baseline_loss_val = improved_dilozo_step(
+                    raw_model, X, Y, v_dict, step, current_zo_seed,
+                    directional_q_val=directional_q, 
+                    zo_eps=dilozo_eps_to_use, 
+                    step_interval=step_interval, rank_r=rank_r, lr=lr,
+                    master_process=master_process, ctx_obj=ctx,
+                    eps=dilozo_eps_to_use, 
+                    current_rank=current_rank_val,
+                    weight_decay=weight_decay
+                )
+                
+                print(f"    Result: baseline={baseline_loss_val:.4f}, best={iter_loss_val:.4f}, coeff={grad_coeff_val:.4f}, success={success_val}")
+                print(f"      → Improvement: {baseline_loss_val - iter_loss_val:.4f} ({'✅' if success_val else '❌'})")
+                
+                # Accumulate results from each micro-batch
+                accumulated_best_seeds.append(current_best_u_seed)
+                accumulated_best_coeffs.append(grad_coeff_val)
+                accumulated_success.append(success_val)  # Track success for each micro-batch
+                any_success_overall = any_success_overall or success_val
+                accumulated_loss += iter_loss_val  # Don't divide here - logging handles it
+                
+                # Get next batch for next iteration (but not after the last micro-step)
+                if micro_step < gradient_accumulation_steps - 1:
+                    X, Y = get_batch('train')
+            
+            loss = accumulated_loss / gradient_accumulation_steps  # Average the accumulated losses
+            print(f"  Improved directional summary: {sum(accumulated_success)}/{gradient_accumulation_steps} successful micro-batches")
+            
+            # Apply accumulated gradients: average ONLY the successful directions
+            if any_success_overall:
+                print(f"  SUCCESS CASE: At least one micro-batch succeeded, applying updates...")
+                # Only use successful micro-batches for gradient computation
+                successful_indices = [i for i, success in enumerate(accumulated_success) if success]
+                
+                if len(successful_indices) > 0:
+                    print(f"    Using {len(successful_indices)} successful directions for gradient update")
+                    # Compute average gradient from ONLY successful directions
+                    avg_gradient_dict = {}
+                    
+                    # Initialize gradient accumulator for each parameter
+                    for name, param in raw_model.named_parameters():
+                        if param.requires_grad:
+                            clean_name = name
+                            if name.startswith('_orig_mod.'):
+                                clean_name = name[len('_orig_mod.'):]
+                            avg_gradient_dict[clean_name] = torch.zeros_like(param.data)
+                    
+                    # Sum up gradients from ONLY successful micro-batches
+                    num_successful_directions = len(successful_indices)
+                    for idx in successful_indices:
+                        best_seed = accumulated_best_seeds[idx]
+                        best_coeff = accumulated_best_coeffs[idx]
+                        torch.manual_seed(best_seed)
+                        
+                        for name, param in raw_model.named_parameters():
+                            if param.requires_grad:
+                                clean_name = name
+                                if name.startswith('_orig_mod.'):
+                                    clean_name = name[len('_orig_mod.'):]
+                                
+                                is_weight = "bias" not in clean_name and "layer_norm" not in clean_name and "layernorm" not in clean_name
+                                
+                                if param.ndim >= 2:
+                                    if clean_name in v_dict:
+                                        u_i = torch.randn(param.size(0), int(current_rank_val), device=param.device, dtype=param.dtype)
+                                        v_i = v_dict[clean_name]
+                                        gradient_contrib = (lr / current_rank_val) * best_coeff * (u_i @ v_i.t())
+                                    else:
+                                        z_i = torch.normal(mean=0, std=1, size=param.size(), device=param.device, dtype=param.dtype)
+                                        gradient_contrib = (lr / current_rank_val) * best_coeff * z_i
+                                else:
+                                    z_i = torch.normal(mean=0, std=1, size=param.size(), device=param.device, dtype=param.dtype)
+                                    gradient_contrib = lr * best_coeff * z_i
+                                
+                                # Add weight decay if applicable
+                                if is_weight and weight_decay > 0:
+                                    gradient_contrib += weight_decay * lr * param.data
+                                
+                                # Accumulate gradient contribution (average over successful directions)
+                                avg_gradient_dict[clean_name] += gradient_contrib / num_successful_directions
+                    
+                    # Apply averaged gradients
+                    for name, param in raw_model.named_parameters():
+                        if param.requires_grad:
+                            clean_name = name
+                            if name.startswith('_orig_mod.'):
+                                clean_name = name[len('_orig_mod.'):]
+                            
+                            if clean_name in avg_gradient_dict:
+                                param.data = param.data - avg_gradient_dict[clean_name]
+                    
+                    print(f"    ✅ Applied improved directional update from {num_successful_directions} successful directions")
+                else:
+                    # This shouldn't happen if any_success_overall is True, but safety check
+                    print(f"    ⚠️  LOGIC ERROR: any_success_overall=True but no successful indices found")
+            else:
+                print(f"  FALLBACK CASE: No successful improved directions, falling back to regular directional search...")
+                
+                # FALLBACK: No successful micro-steps with improved search, use regular directional search
+                # Run regular directional search for all micro-batches
+                fallback_accumulated_gradients = {}
+                fallback_any_success = False
+                fallback_num_successful = 0
+                fallback_last_successful_seed = None
+                fallback_last_successful_coeff = 0.0
+                
+                # Initialize gradient accumulator
+                for name, param in raw_model.named_parameters():
+                    if param.requires_grad:
+                        clean_name = name
+                        if name.startswith('_orig_mod.'):
+                            clean_name = name[len('_orig_mod.'):]
+                        fallback_accumulated_gradients[clean_name] = torch.zeros_like(param.data)
+                
+                # Get fresh batches for fallback
+                for micro_step in range(gradient_accumulation_steps):
+                    print(f"    Fallback micro-step {micro_step+1}/{gradient_accumulation_steps}: Testing regular directional...")
+                    X, Y = get_batch('train')
+                    current_zo_seed = np.random.randint(1000000000)
+                    
+                    # Use regular directional search (less conservative)
+                    iter_loss_val, grad_coeff_val, current_best_u_seed, success_val = dilozo_step(
+                        raw_model, X, Y, v_dict, step, current_zo_seed,
+                        directional_q_val=directional_q, 
+                        zo_eps=dilozo_eps_to_use, 
+                        step_interval=step_interval, rank_r=rank_r, 
+                        master_process=master_process, ctx_obj=ctx,
+                        eps=dilozo_eps_to_use, 
+                        current_rank=current_rank_val
+                    )
+                    
+                    print(f"      Fallback result: loss={iter_loss_val:.4f}, coeff={grad_coeff_val:.4f}, success={success_val}")
+                    
+                    fallback_any_success = fallback_any_success or success_val
+                    
+                    if success_val:
+                        fallback_num_successful += 1
+                        fallback_last_successful_seed = current_best_u_seed
+                        fallback_last_successful_coeff = grad_coeff_val
+                        
+                        # Reconstruct gradient update
+                        torch.manual_seed(current_best_u_seed)
+                        
+                        for name, param in raw_model.named_parameters():
+                            if param.requires_grad:
+                                clean_name = name
+                                if name.startswith('_orig_mod.'):
+                                    clean_name = name[len('_orig_mod.'):]
+                                
+                                is_weight = "bias" not in clean_name and "layer_norm" not in clean_name and "layernorm" not in clean_name
+                                
+                                if param.ndim >= 2:
+                                    if clean_name in v_dict:
+                                        u_i = torch.randn(param.size(0), int(current_rank_val), device=param.device, dtype=param.dtype)
+                                        v_i = v_dict[clean_name]
+                                        gradient_update = (lr / current_rank_val) * grad_coeff_val * (u_i @ v_i.t())
+                                    else:
+                                        z_i = torch.normal(mean=0, std=1, size=param.size(), device=param.device, dtype=param.dtype)
+                                        gradient_update = (lr / current_rank_val) * grad_coeff_val * z_i
+                                else:
+                                    z_i = torch.normal(mean=0, std=1, size=param.size(), device=param.device, dtype=param.dtype)
+                                    gradient_update = lr * grad_coeff_val * z_i
+                                
+                                if is_weight and weight_decay > 0:
+                                    gradient_update += weight_decay * lr * param.data
+                                
+                                fallback_accumulated_gradients[clean_name] += gradient_update
+                
+                print(f"    Fallback summary: {fallback_num_successful}/{gradient_accumulation_steps} successful micro-batches")
+                
+                # Apply fallback gradients if any successful
+                if fallback_any_success and fallback_num_successful > 0:
+                    print(f"    ✅ Applying fallback update from {fallback_num_successful} successful directions")
+                    for name, param in raw_model.named_parameters():
+                        if param.requires_grad:
+                            clean_name = name
+                            if name.startswith('_orig_mod.'):
+                                clean_name = name[len('_orig_mod.'):]
+                            
+                            if clean_name in fallback_accumulated_gradients:
+                                averaged_gradient = fallback_accumulated_gradients[clean_name] / fallback_num_successful
+                                param.data = param.data - averaged_gradient
+                else:
+                    print(f"    LAST RESORT: Both improved and regular directional failed, making small random step")
+                    # Even fallback failed, make a small random step to avoid being completely stuck
+                    torch.manual_seed(accumulated_best_seeds[0])  # Use first seed
+                    small_lr = lr * 0.1  # Much smaller step
+                    
+                    for name, param in raw_model.named_parameters():
+                        if param.requires_grad:
+                            clean_name = name
+                            if name.startswith('_orig_mod.'):
+                                clean_name = name[len('_orig_mod.'):]
+                            
+                            is_weight = "bias" not in clean_name and "layer_norm" not in clean_name and "layernorm" not in clean_name
+                            
+                            if param.ndim >= 2:
+                                if clean_name in v_dict:
+                                    u_i = torch.randn(param.size(0), int(current_rank_val), device=param.device, dtype=param.dtype)
+                                    v_i = v_dict[clean_name]
+                                    small_update = (small_lr / current_rank_val) * (u_i @ v_i.t())
+                                else:
+                                    z_i = torch.normal(mean=0, std=1, size=param.size(), device=param.device, dtype=param.dtype)
+                                    small_update = (small_lr / current_rank_val) * z_i
+                            else:
+                                z_i = torch.normal(mean=0, std=1, size=param.size(), device=param.device, dtype=param.dtype)
+                                small_update = small_lr * z_i
+                            
+                            if is_weight and weight_decay > 0:
+                                small_update += weight_decay * small_lr * param.data
+                            
+                            param.data = param.data - small_update
+                    print(f"    ⚠️  Applied emergency random step with lr={small_lr:.2e}")
+            
+            print(f"Step {step} complete: Final loss = {loss:.4f}")
+        
+        else:
+            # Original DiLoZO implementation (existing code)
+            # Option A: True Gradient Accumulation - accumulate actual gradient vectors
+            accumulated_gradients = {}  # Store actual gradient tensors for each parameter
+            any_success = False  # Track if any micro-step was successful
+            accumulated_loss = 0.0
+            num_successful_steps = 0  # Track number of successful micro-steps
+            
+            # Track last successful values for fallback
+            last_successful_seed = None
+            last_successful_coeff = 0.0
+            
+            # Initialize accumulated gradients dictionary
+            for name, param in raw_model.named_parameters():
+                if param.requires_grad:
+                    clean_name = name
+                    if name.startswith('_orig_mod.'):
+                        clean_name = name[len('_orig_mod.'):]
+                    accumulated_gradients[clean_name] = torch.zeros_like(param.data)
+            
+            for micro_step in range(gradient_accumulation_steps):
+                current_zo_seed = np.random.randint(1000000000)
+                
+                # Use regular directional search
+                iter_loss_val, grad_coeff_val, current_best_u_seed, success_val, baseline_loss_val = dilozo_step(
+                    raw_model, X, Y, v_dict, step, current_zo_seed,
+                    directional_q_val=directional_q, 
+                    zo_eps=dilozo_eps_to_use, 
+                    step_interval=step_interval, rank_r=rank_r, 
+                    master_process=master_process, ctx_obj=ctx,
+                    eps=dilozo_eps_to_use, 
+                    current_rank=current_rank_val
+                )
+                
+                # Track overall success
+                any_success = any_success or success_val
+                accumulated_loss += iter_loss_val  # Don't divide here - logging handles it
+                
+                # If this micro-step found an improving direction, accumulate its gradient
+                if success_val:
+                    num_successful_steps += 1
+                    # Track last successful values for potential fallback use
+                    last_successful_seed = current_best_u_seed
+                    last_successful_coeff = grad_coeff_val
+                    
+                    # Reconstruct the gradient update for each parameter
+                    torch.manual_seed(current_best_u_seed)
+                    
+                    for name, param in raw_model.named_parameters():
+                        if param.requires_grad:
+                            clean_name = name
+                            if name.startswith('_orig_mod.'):
+                                clean_name = name[len('_orig_mod.'):]
+                            
+                            is_weight = "bias" not in clean_name and "layer_norm" not in clean_name and "layernorm" not in clean_name
+                            
+                            if param.ndim >= 2:
+                                # For matrices, use low-rank update
+                                if clean_name in v_dict:
+                                    u_i = torch.randn(param.size(0), int(current_rank_val), device=param.device, dtype=param.dtype)
+                                    v_i = v_dict[clean_name]
+                                    gradient_update = (lr / current_rank_val) * grad_coeff_val * (u_i @ v_i.t())
+                                else:
+                                    # For matrices without V, use Gaussian update  
+                                    z_i = torch.normal(mean=0, std=1, size=param.size(), device=param.device, dtype=param.dtype)
+                                    gradient_update = (lr / current_rank_val) * grad_coeff_val * z_i
+                            else:
+                                # For vectors (biases), use Gaussian update with full lr (no rank scaling)
+                                z_i = torch.normal(mean=0, std=1, size=param.size(), device=param.device, dtype=param.dtype)
+                                gradient_update = lr * grad_coeff_val * z_i
+                            
+                            # Add weight decay if applicable
+                            if is_weight and weight_decay > 0:
+                                gradient_update += weight_decay * lr * param.data
+                            
+                            # Accumulate the gradient (don't divide yet, will divide after all micro-steps)
+                            accumulated_gradients[clean_name] += gradient_update
+                
+                # Get next batch for next iteration (but not after the last micro-step)
+                if micro_step < gradient_accumulation_steps - 1:
+                    X, Y = get_batch('train')
+            
+            loss = torch.tensor(accumulated_loss / gradient_accumulation_steps, device=device)  # Convert to tensor and average
+            
+            # Apply accumulated gradients directly (only if any micro-step was successful)
+            if any_success:
+                if not use_momentum:
+                    # Apply accumulated gradients directly, averaged over successful steps
+                    for name, param in raw_model.named_parameters():
+                        if param.requires_grad:
+                            clean_name = name
+                            if name.startswith('_orig_mod.'):
+                                clean_name = name[len('_orig_mod.'):]
+                            
+                            if clean_name in accumulated_gradients:
+                                # Divide by number of successful steps to get proper average
+                                averaged_gradient = accumulated_gradients[clean_name] / num_successful_steps
+                                param.data = param.data - averaged_gradient
+                else:
+                    # Fallback to existing logic for momentum case
+                    best_u_seed_for_update = last_successful_seed  # Use last successful seed
+                    accumulated_grad_coeff_val = last_successful_coeff   # Use last successful coefficient
+                                    
+                    if use_momentum:
+                        dilozo_update_momentum(raw_model, optimizer, accumulated_grad_coeff_val, best_u_seed_for_update, 
+                                               v_dict, exp_avg_m, step, lr, rank_r, 
+                                               weight_decay=weight_decay, master_process=master_process, beta1=momentum_beta, 
+                                               current_rank=current_rank_val)
+                    else:
+                        dilozo_update(raw_model, optimizer, accumulated_grad_coeff_val, best_u_seed_for_update, 
+                                      v_dict, step, lr, rank_r, 
+                                      weight_decay=weight_decay, master_process=master_process, 
+                                      current_rank=current_rank_val)
+            
+            # Set any_success_overall for consistency with improved directional logic
+            any_success_overall = any_success
+            
+            print(f"Step {step} complete: Final loss = {loss.item():.4f}")
+        
+        # DiLoZO-specific adaptive epsilon based on success rate
+        if use_dilozo_adaptive_eps:
+            # Use the appropriate success variable based on which method was used
+            if use_improved_directional:
+                success_to_track = any_success_overall
+            else:
+                # For regular directional, use any_success (now properly defined)
+                success_to_track = any_success_overall  # We set this at the end of regular directional block
+            
+            get_batch.dilozo_success_history.append(success_to_track)
+            if len(get_batch.dilozo_success_history) > 10:
+                get_batch.dilozo_success_history.pop(0)  # Keep only last 10
+            
+            print(f"Adaptive epsilon tracking: success={success_to_track}, history_length={len(get_batch.dilozo_success_history)}")
+            
+            # Compute success rate over last 10 iterations
+            if len(get_batch.dilozo_success_history) >= 5:  # Need at least 5 samples
+                success_rate = sum(get_batch.dilozo_success_history) / len(get_batch.dilozo_success_history)
+                old_eps = get_batch.dilozo_adaptive_eps
+                
+                # Adjust epsilon based on success rate
+                if success_rate < 0.3:  # Too few successes, decrease epsilon
+                    get_batch.dilozo_adaptive_eps *= 0.95
+                    if master_process and iter_num % 50 == 0:
+                        print(f"DiLoZO: Low success rate ({success_rate:.2f}), decreasing epsilon from {old_eps:.2e} to {get_batch.dilozo_adaptive_eps:.2e}")
+                elif success_rate > 0.8:  # Too many successes, could try increasing epsilon
+                    get_batch.dilozo_adaptive_eps *= 1.05
+                    if master_process and iter_num % 50 == 0:
+                        print(f"DiLoZO: High success rate ({success_rate:.2f}), increasing epsilon from {old_eps:.2e} to {get_batch.dilozo_adaptive_eps:.2e}")
+                
+                # Clamp epsilon to reasonable bounds
+                get_batch.dilozo_adaptive_eps = max(1e-6, min(1e-2, get_batch.dilozo_adaptive_eps))
+                print(f"Current adaptive epsilon: {get_batch.dilozo_adaptive_eps:.2e} (success_rate: {success_rate:.2f})")
+        
+        # Adaptive epsilon support  
         if use_adaptive_eps and adaptive_eps_manager is not None:
             current_lr_for_eps_record = get_lr(iter_num) if decay_lr else learning_rate
-            adaptive_eps_manager.record_step(
-                loss=first_microbatch_loss_val, 
-                projected_grad=accumulated_grad_coeff_val, 
-                learning_rate=current_lr_for_eps_record,
-                method_info={'success': first_microbatch_success_val}
-            )
+            if use_improved_directional:
+                # For improved directional, use average of successful coefficients only
+                successful_coeffs = [accumulated_best_coeffs[i] for i, success in enumerate(accumulated_success) if success]
+                avg_coeff = sum(successful_coeffs) / len(successful_coeffs) if successful_coeffs else 0.0
+                print(f"Recording adaptive eps: improved_directional, avg_coeff={avg_coeff:.4f}, success={any_success_overall}")
+                adaptive_eps_manager.record_step(
+                    loss=accumulated_loss, 
+                    projected_grad=avg_coeff,
+                    learning_rate=current_lr_for_eps_record,
+                    method_info={'success': any_success_overall}
+                )
+            else:
+                # For regular directional, use the last successful coefficient
+                print(f"Recording adaptive eps: regular_directional, coeff={last_successful_coeff:.4f}, success={any_success_overall}")
+                adaptive_eps_manager.record_step(
+                    loss=accumulated_loss, 
+                    projected_grad=last_successful_coeff if any_success_overall else 0.0,
+                    learning_rate=current_lr_for_eps_record,
+                    method_info={'success': any_success_overall}
+                )
         step += 1
     elif train_method == 'kronzo':
         accumulated_projected_grad = 0.0
@@ -699,12 +1083,12 @@ while True:
             # Get next batch for next iteration (but not after the last micro-step)
             if micro_step < gradient_accumulation_steps - 1:
                 X, Y = get_batch('train')
-            accumulated_loss += loss_val / gradient_accumulation_steps  # Proper loss accumulation
+            accumulated_loss += loss_val  # Don't divide here - logging handles it
             if micro_step == 0:
-                accumulated_projected_grad = projected_grad / gradient_accumulation_steps
+                accumulated_projected_grad = projected_grad
             else:
-                accumulated_projected_grad += projected_grad / gradient_accumulation_steps
-        loss = accumulated_loss  # Use properly accumulated loss
+                accumulated_projected_grad += projected_grad
+        loss = accumulated_loss / gradient_accumulation_steps  # Average the accumulated losses
         if use_momentum:
             kronzo_update_momentum(raw_model, optimizer, accumulated_projected_grad, first_zo_seed, 
                                    exp_avg_m, step, lr, weight_decay, master_process,
@@ -749,7 +1133,7 @@ while True:
             # Get next batch for next iteration (but not after the last micro-step)
             if micro_step < gradient_accumulation_steps - 1:
                 X, Y = get_batch('train')
-            accumulated_loss += loss_step_val / gradient_accumulation_steps  # Proper loss accumulation
+            accumulated_loss += loss_step_val  # Don't divide here - logging handles it
             if micro_step == 0:
                 first_microbatch_loss_val    = loss_step_val
                 first_microbatch_success_val = success_val
@@ -757,10 +1141,10 @@ while True:
                 if dikronzo_direct_movement:
                     pass
                 else:
-                    accumulated_grad_val = grad_or_coeff_val / gradient_accumulation_steps
+                    accumulated_grad_val = grad_or_coeff_val
             elif not dikronzo_direct_movement:
-                 accumulated_grad_val += grad_or_coeff_val / gradient_accumulation_steps
-        loss = accumulated_loss  # Use properly accumulated loss
+                 accumulated_grad_val += grad_or_coeff_val
+        loss = accumulated_loss / gradient_accumulation_steps  # Average the accumulated losses
         if dikronzo_direct_movement:
             dikronzo_update(
                 raw_model, optimizer,
@@ -811,7 +1195,7 @@ while True:
     dt = t1 - t0
     t0 = t1
     if iter_num % log_interval == 0 and master_process:
-        lossf = loss.item() * gradient_accumulation_steps
+        lossf = loss.item()  # Don't multiply by gradient_accumulation_steps - loss is already averaged
         if local_iter_num >= 5:
             mfu = raw_model.estimate_mfu(batch_size * gradient_accumulation_steps, dt)
             running_mfu = mfu if running_mfu == -1.0 else 0.9*running_mfu + 0.1*mfu
@@ -829,6 +1213,15 @@ while True:
                 'eps': f"{eps_stats['eps']:.2e}", 
                 'success': f"{eps_stats['success_rate']:.2f}"
             }
+        # Add DiLoZO-specific success rate and epsilon info
+        if train_method == 'dilozo' and use_dilozo_adaptive_eps and hasattr(get_batch, 'dilozo_success_history'):
+            if len(get_batch.dilozo_success_history) > 0:
+                dilozo_success_rate = sum(get_batch.dilozo_success_history) / len(get_batch.dilozo_success_history)
+                eps_info.update({
+                    'eps': f"{get_batch.dilozo_adaptive_eps:.2e}",
+                    'success': f"{dilozo_success_rate:.2f}"
+                })
+        
         pbar_info = {
             'loss': f'{lossf:.4f}',
             'lr': f'{lr:.2e}',

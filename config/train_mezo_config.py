@@ -57,14 +57,14 @@ n_embd = 384     # Embedding dimension
 # n_head = 16
 # n_embd = 1024
 
-dropout = 0.1    # Dropout rate (0.0 for pretraining, 0.1+ for finetuning)
+dropout = 0.0    # Dropout rate (0.0 for pretraining, 0.1+ for finetuning)
 bias = False     # Use bias in LayerNorm and Linear layers
 
 # =============================================================================
 # OPTIMIZER SETTINGS
 # =============================================================================
 learning_rate = 1e-3  # Maximum learning rate
-max_iters = 200      # Total number of training iterations
+max_iters = 7000      # Total number of training iterations
 weight_decay = 1e-1   # L2 regularization strength
 
 # Standard optimizer parameters (used as fallback)
@@ -93,7 +93,7 @@ momentum_beta = 0.9  # Momentum coefficient
 # =============================================================================
 # DIRECTIONAL SELECTION PARAMETERS (for DiMeZO)
 # =============================================================================
-directional_q = 20           # Number of directions to try in DiMeZO
+directional_q = 100           # Number of directions to try in DiMeZO
                              # OPTIONS: 5 (fast), 10 (default), 20 (thorough)
 
 dimezo_direct_movement = False  # Movement strategy for DiMeZO
@@ -148,7 +148,7 @@ kron_max_factor = 32             # Maximum factor size for Kronecker factorizati
 # =============================================================================
 decay_lr = True      # Whether to decay learning rate
 warmup_iters = 500   # Number of warmup iterations
-lr_decay_iters = 5000  # Should be ~= max_iters for cosine decay
+lr_decay_iters = 7000  # Should be ~= max_iters for cosine decay
 min_lr = 1e-4        # Minimum learning rate (should be ~= learning_rate/10)
 
 # =============================================================================
