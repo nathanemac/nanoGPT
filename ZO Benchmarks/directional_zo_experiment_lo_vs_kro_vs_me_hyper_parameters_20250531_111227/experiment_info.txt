@@ -1,0 +1,45 @@
+Directional ZO Methods Overnight Testing Experiment
+==================================================
+
+Started: 2025-06-01 19:14:02
+Total experiments: 96
+
+Methods tested:
+- dilozo: DiLoZO (with and without momentum)
+- dimezo: DiMeZO (with and without momentum)
+- dikronzo: DiKronZO (with and without momentum)
+
+Parameter combinations:
+- methods: ['dilozo', 'dimezo', 'dikronzo']
+- momentum: [False, True]
+- learning_rate: [0.0006, 0.001, 0.003, 0.006]
+- zo_eps: [0.0005, 0.001, 0.002, 0.005]
+
+Base configuration:
+- dataset: shakespeare
+- n_layer: 6
+- n_head: 6
+- n_embd: 384
+- max_iters: 3000
+- warmup_iters: 300
+- lr_decay_iters: 3000
+- eval_interval: 500
+- weight_decay: 0.1
+- momentum_beta: 0.9
+- rank_r: 2
+- step_interval: 50
+- directional_q: 10
+- kron_max_factor: 32
+- kron_strategy: approx_square
+- kronzo_sampling_number: 2
+- dimezo_direct_movement: False
+- dikronzo_direct_movement: False
+
+Directory structure:
+- directional_zo_experiment_20250531_111227/
+  ├── experiment_info.txt (this file)
+  ├── summary.txt (final results table)
+  ├── directional_exp_*.log (individual experiment logs)
+  └── results/
+      ├── all_results.json (complete results)
+      └── result_*.json (individual results)

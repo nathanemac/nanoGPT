@@ -1,0 +1,37 @@
+DiKronZO Overnight Testing Experiment
+=====================================
+
+Started: 2025-06-01 22:22:51
+Total experiments: 48
+
+Parameter combinations:
+- kronzo_sampling_number: [1, 2, 5, 10]
+- step_interval: [1, 5, 10, 20]
+- directional_q: [1, 5, 10]
+
+Base configuration:
+- train_method: dikronzo
+- dataset: shakespeare
+- n_layer: 6
+- n_head: 6
+- n_embd: 384
+- learning_rate: 0.001
+- max_iters: 5000
+- zo_eps: 0.001
+- kron_max_factor: 32
+- use_momentum: True
+- momentum_beta: 0.9
+- warmup_iters: 500
+- lr_decay_iters: 5000
+- min_lr: 0.0001
+- eval_interval: 500
+- dikronzo_direct_movement: False
+
+Directory structure:
+- dikronzo_experiment_20250530_214042/
+  ├── experiment_info.txt (this file)
+  ├── summary.txt (final results table)
+  ├── dikronzo_exp_*.log (individual experiment logs)
+  └── results/
+      ├── all_results.json (complete results)
+      └── result_*.json (individual results)

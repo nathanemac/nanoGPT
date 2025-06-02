@@ -308,4 +308,71 @@ def dimezo_update(model, optimizer, gradient_or_direction, best_seed, step, lr, 
             if is_weight:
                 param.data = param.data - lr * (projected_grad * z + weight_decay * param.data)
             else:
-                param.data = param.data - lr * (projected_grad * z) 
+                param.data = param.data - lr * (projected_grad * z)
+
+def dimezo_update_momentum(model, optimizer, gradient_or_direction, best_seed, exp_avg_m, step, lr, weight_decay, master_process, beta1=0.9, named_parameters_to_optim=None, direct_movement=False):
+    """
+    Update model parameters using DiMeZO with momentum.
+    
+    Momentum update:
+    m_t = β1 * m_{t-1} + (1 - β1) * g_t
+    θ_t = θ_{t-1} - α * m_t
+    
+    Two update modes:
+    1. Direct Movement (direct_movement=True): 
+       g_t = Z_best, θ ← θ + α * m_t (move with momentum toward best directions)
+       
+    2. Gradient Descent (direct_movement=False):
+       g_t = c * Z_best where c = ∇f(θ) · Z_best, θ ← θ - α * m_t
+    """
+    if named_parameters_to_optim is None:
+        named_parameters_to_optim = []
+        for name, param in model.named_parameters():
+            if param.requires_grad:
+                clean_name = name
+                if name.startswith('_orig_mod.'):
+                    clean_name = name[len('_orig_mod.'):]
+                named_parameters_to_optim.append((clean_name, param))
+    
+    if direct_movement:
+        # Direct movement with momentum: θ ← θ + α * m_t where m_t accumulates Z_best
+        direction_dict = gradient_or_direction
+        for clean_name, param in named_parameters_to_optim:
+            if clean_name in direction_dict:
+                z = direction_dict[clean_name]
+                
+                # Initialize momentum if needed
+                if clean_name not in exp_avg_m:
+                    exp_avg_m[clean_name] = torch.zeros_like(z)
+                
+                # Update momentum: m_t = β * m_{t-1} + (1-β) * Z_best
+                exp_avg_m[clean_name] = beta1 * exp_avg_m[clean_name] + (1 - beta1) * z
+                
+                is_weight = "bias" not in clean_name and "layer_norm" not in clean_name and "layernorm" not in clean_name
+                if is_weight:
+                    # Apply momentum update with weight decay: θ ← θ * (1 - α * λ) + α * m_t
+                    param.data = param.data * (1 - lr * weight_decay) + lr * exp_avg_m[clean_name]
+                else:
+                    param.data = param.data + lr * exp_avg_m[clean_name]
+    else:
+        # Gradient descent mode with momentum: θ ← θ - α * m_t where m_t accumulates c * Z_best
+        torch.manual_seed(best_seed)
+        projected_grad = gradient_or_direction
+        
+        for clean_name, param in named_parameters_to_optim:
+            z = torch.normal(mean=0, std=1, size=param.size(), device=param.device, dtype=param.dtype)
+            grad = projected_grad * z
+            
+            # Initialize momentum if needed
+            if clean_name not in exp_avg_m:
+                exp_avg_m[clean_name] = torch.zeros_like(grad)
+            
+            # Update momentum: m_t = β * m_{t-1} + (1-β) * g_t
+            exp_avg_m[clean_name] = beta1 * exp_avg_m[clean_name] + (1 - beta1) * grad
+            
+            # Apply update with momentum
+            is_weight = "bias" not in clean_name and "layer_norm" not in clean_name and "layernorm" not in clean_name
+            if is_weight:
+                param.data = param.data - lr * (exp_avg_m[clean_name] + weight_decay * param.data)
+            else:
+                param.data = param.data - lr * exp_avg_m[clean_name] 

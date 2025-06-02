@@ -1,0 +1,32 @@
+{
+  "best_val_loss": 10.3488,
+  "final_train_loss": 10.3545,
+  "final_val_loss": 10.3488,
+  "avg_iter_per_sec": 0.5695335516154045,
+  "peak_memory_gb": 0.1,
+  "final_step": 5001,
+  "duration_minutes": 143.7905450304349,
+  "exit_code": 0,
+  "experiment_id": 27,
+  "config": {
+    "train_method": "dikronzo",
+    "dataset": "shakespeare",
+    "n_layer": 6,
+    "n_head": 6,
+    "n_embd": 384,
+    "learning_rate": 0.001,
+    "max_iters": 5000,
+    "zo_eps": 0.001,
+    "kron_max_factor": 32,
+    "use_momentum": true,
+    "momentum_beta": 0.9,
+    "warmup_iters": 500,
+    "lr_decay_iters": 5000,
+    "min_lr": 0.0001,
+    "eval_interval": 500,
+    "dikronzo_direct_movement": false,
+    "kronzo_sampling_number": 5,
+    "step_interval": 1,
+    "directional_q": 10
+  }
+}

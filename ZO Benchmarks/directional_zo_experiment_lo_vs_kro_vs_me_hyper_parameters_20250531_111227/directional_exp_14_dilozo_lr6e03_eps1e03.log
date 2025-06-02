@@ -1,0 +1,177 @@
+EXPERIMENT 14
+Parameters: {'dataset': 'shakespeare', 'n_layer': 6, 'n_head': 6, 'n_embd': 384, 'max_iters': 3000, 'warmup_iters': 300, 'lr_decay_iters': 3000, 'eval_interval': 500, 'weight_decay': 0.1, 'momentum_beta': 0.9, 'rank_r': 2, 'step_interval': 50, 'directional_q': 10, 'kron_max_factor': 32, 'kron_strategy': 'approx_square', 'kronzo_sampling_number': 2, 'dimezo_direct_movement': False, 'dikronzo_direct_movement': False, 'train_method': 'dilozo', 'learning_rate': 0.006, 'zo_eps': 0.001, 'min_lr': 0.0006000000000000001, 'use_momentum': False}
+Started: 2025-05-31 12:29:23
+Command: python nanoGPT/zo_train.py --method_config_file directional_zo_experiment_20250531_111227/temp_config_14.py
+--------------------------------------------------------------------------------
+
+Loading method-specific config: directional_zo_experiment_20250531_111227/temp_config_14.py
+================================================================================
+📋 METHOD CONFIG FILE CONTENTS (directional_zo_experiment_20250531_111227/temp_config_14.py):
+================================================================================
+# =============================================================================
+# TEMPORARY CONFIG FOR OVERNIGHT DIRECTIONAL ZO TESTING
+# =============================================================================
+# Generated automatically by overnight_lozo_mezo_kronzo_test.py
+# Test parameters: {'dataset': 'shakespeare', 'n_layer': 6, 'n_head': 6, 'n_embd': 384, 'max_iters': 3000, 'warmup_iters': 300, 'lr_decay_iters': 3000, 'eval_interval': 500, 'weight_decay': 0.1, 'momentum_beta': 0.9, 'rank_r': 2, 'step_interval': 50, 'directional_q': 10, 'kron_max_factor': 32, 'kron_strategy': 'approx_square', 'kronzo_sampling_number': 2, 'dimezo_direct_movement': False, 'dikronzo_direct_movement': False, 'train_method': 'dilozo', 'learning_rate': 0.006, 'zo_eps': 0.001, 'min_lr': 0.0006000000000000001, 'use_momentum': False}
+
+import torch
+
+# =============================================================================
+# TRAINING METHOD SELECTION
+# =============================================================================
+train_method = 'dilozo'
+
+# =============================================================================
+# DATASET AND MODEL SELECTION
+# =============================================================================
+dataset = 'shakespeare'
+init_from = 'scratch'
+
+# =============================================================================
+# OUTPUT AND LOGGING SETTINGS
+# =============================================================================
+out_dir = 'out-dilozo'
+eval_interval = 500
+log_interval = 1
+eval_iters = 50
+eval_only = False
+always_save_checkpoint = True
+wandb_log = False
+wandb_project = 'nanogpt'
+wandb_run_name = 'dilozo-test'
+
+# =============================================================================
+# DATA CONFIGURATION
+# =============================================================================
+gradient_accumulation_steps = 1
+batch_size = 32
+block_size = 256
+
+# =============================================================================
+# MODEL ARCHITECTURE
+# =============================================================================
+n_layer = 6
+n_head = 6
+n_embd = 384
+dropout = 0.0
+bias = False
+
+# =============================================================================
+# OPTIMIZER SETTINGS
+# =============================================================================
+learning_rate = 0.006
+max_iters = 3000
+weight_decay = 0.1
+beta1 = 0.9
+beta2 = 0.95
+
+# =============================================================================
+# ZERO-ORDER OPTIMIZATION PARAMETERS
+# =============================================================================
+zo_eps = 0.001
+zo_q = 1
+
+# =============================================================================
+# LOW-RANK PARAMETERS (for DiLoZO)
+# =============================================================================
+rank_r = 2
+step_interval = 50
+rank_adaptive = False
+min_rank = 1
+max_rank = 16
+rank_strategy = 'linear'
+
+# =============================================================================
+# MOMENTUM SETTINGS
+# =============================================================================
+use_momentum = False
+momentum_beta = 0.9
+
+# =============================================================================
+# DIRECTIONAL SELECTION PARAMETERS
+# =============================================================================
+directional_q = 10
+
+# =============================================================================
+# KRONECKER PRODUCT PARAMETERS (for DiKronZO)
+# =============================================================================
+kron_strategy = 'approx_square'
+kron_max_factor = 32
+kronzo_sampling_number = 2
+
+# =============================================================================
+# DIMEZO SPECIFIC PARAMETERS
+# =============================================================================
+dimezo_direct_movement = False
+
+# =============================================================================
+# DIKRONZO SPECIFIC PARAMETERS
+# =============================================================================
+dikronzo_direct_movement = False
+
+# =============================================================================
+# SVD-LOZO SPECIFIC PARAMETERS (for compatibility)
+# =============================================================================
+svd_tau = 0.6
+svd_max_rank = 16
+use_full_svd = False
+
+# =============================================================================
+# ADAPTIVE ZO_EPS SETTINGS
+# =============================================================================
+use_adaptive_eps = False
+
+# =============================================================================
+# LEARNING RATE SCHEDULE
+# =============================================================================
+decay_lr = True
+warmup_iters = 300
+lr_decay_iters = 3000
+min_lr = 0.0006000000000000001
+
+# =============================================================================
+# SYSTEM SETTINGS
+# =============================================================================
+device = 'cuda'
+dtype = 'bfloat16'
+compile = True
+backend = 'nccl'
+
+# =============================================================================
+# NUMERICAL STABILITY SETTINGS
+# =============================================================================
+use_zo_clipping = False
+zo_grad_clip = 1.0
+zo_param_clip = 10.0
+zo_loss_threshold = 100.0
+zo_recovery_lr_factor = 0.1
+zo_max_recovery_attempts = 3
+zo_verbose_debug = False
+zo_verbose_clipping = False
+
+================================================================================
+🔧 EXECUTING CONFIG...
+================================================================================
+✅ Method config loaded successfully: directional_zo_experiment_20250531_111227/temp_config_14.py
+tokens per iteration will be: 8,192
+Initializing a new model from scratch
+defaulting to vocab_size of GPT-2 to 50304 (50257 rounded up for efficiency)
+number of parameters: 29.94M
+num decayed parameter tensors: 26, with 30,031,872 parameters
+num non-decayed parameter tensors: 13, with 4,992 parameters
+using fused AdamW: True
+compiling the model... (takes a ~minute)
+Training:   0%|          | 0/3000 [00:00<?, ?it/s]Training:   0%|          | 0/3000 [00:03<?, ?it/s, loss=10.8786, lr=1.99e-05, mem=0.1GB, mfu=-100.0%, step=1]Training:   0%|          | 1/3000 [00:03<3:04:00,  3.68s/it, loss=10.8786, lr=1.99e-05, mem=0.1GB, mfu=-100.0%, step=1]Training:   0%|          | 1/3000 [00:03<3:04:00,  3.68s/it, loss=10.8616, lr=3.99e-05, mem=0.1GB, mfu=-100.0%, step=2]Training:   0%|          | 2/3000 [00:03<1:19:32,  1.59s/it, loss=10.8616, lr=3.99e-05, mem=0.1GB, mfu=-100.0%, step=2]Training:   0%|          | 2/3000 [00:03<1:19:32,  1.59s/it, loss=10.8664, lr=5.98e-05, mem=0.1GB, mfu=-100.0%, step=3]Training:   0%|          | 3/3000 [00:03<46:10,  1.08it/s, loss=10.8664, lr=5.98e-05, mem=0.1GB, mfu=-100.0%, step=3]  Training:   0%|          | 3/3000 [00:04<46:10,  1.08it/s, loss=10.8451, lr=7.97e-05, mem=0.1GB, mfu=-100.0%, step=4]Training:   0%|          | 4/3000 [00:04<30:28,  1.64it/s, loss=10.8451, lr=7.97e-05, mem=0.1GB, mfu=-100.0%, step=4]Training:   0%|          | 4/3000 [00:04<30:28,  1.64it/s, loss=10.8185, lr=9.97e-05, mem=0.1GB, mfu=-100.0%, step=5]Training:   0%|          | 5/3000 [00:04<21:49,  2.29it/s, loss=10.8185, lr=9.97e-05, mem=0.1GB, mfu=-100.0%, step=5]Training:   0%|          | 5/3000 [00:04<21:49,  2.29it/s, loss=10.8111, lr=1.20e-04, mem=0.1GB, mfu=3.8%, step=6]   Training:   0%|          | 6/3000 [00:04<16:35,  3.01it/s, loss=10.8111, lr=1.20e-04, mem=0.1GB, mfu=3.8%, step=6]Training:   0%|          | 6/3000 [00:04<16:35,  3.01it/s, loss=10.8037, lr=1.40e-04, mem=0.1GB, mfu=3.8%, step=7]Training:   0%|          | 7/3000 [00:04<13:18,  3.75it/s, loss=10.8037, lr=1.40e-04, mem=0.1GB, mfu=3.8%, step=7]Training:   0%|          | 7/3000 [00:04<13:18,  3.75it/s, loss=10.8142, lr=1.59e-04, mem=0.1GB, mfu=3.8%, step=8]Training:   0%|          | 8/3000 [00:04<11:07,  4.48it/s, loss=10.8142, lr=1.59e-04, mem=0.1GB, mfu=3.8%, step=8]Training:   0%|          | 8/3000 [00:04<11:07,  4.48it/s, loss=10.8058, lr=1.79e-04, mem=0.1GB, mfu=3.8%, step=9]Training:   0%|          | 9/3000 [00:04<09:39,  5.16it/s, loss=10.8058, lr=1.79e-04, mem=0.1GB, mfu=3.8%, step=9]Training:   0%|          | 9/3000 [00:04<09:39,  5.16it/s, loss=10.8069, lr=1.99e-04, mem=0.1GB, mfu=3.8%, step=10]Training:   0%|          | 10/3000 [00:04<08:39,  5.76it/s, loss=10.8069, lr=1.99e-04, mem=0.1GB, mfu=3.8%, step=10]Training:   0%|          | 10/3000 [00:04<08:39,  5.76it/s, loss=10.7968, lr=2.19e-04, mem=0.1GB, mfu=3.8%, step=11]Training:   0%|          | 11/3000 [00:04<07:58,  6.25it/s, loss=10.7968, lr=2.19e-04, mem=0.1GB, mfu=3.8%, step=11]Training:   0%|          | 11/3000 [00:05<07:58,  6.25it/s, loss=10.8037, lr=2.39e-04, mem=0.1GB, mfu=3.8%, step=12]Training:   0%|          | 12/3000 [00:05<07:34,  6.58it/s, loss=10.8037, lr=2.39e-04, mem=0.1GB, mfu=3.8%, step=12]Training:   0%|          | 12/3000 [00:05<07:34,  6.58it/s, loss=10.8005, lr=2.59e-04, mem=0.1GB, mfu=3.8%, step=13]Training:   0%|          | 13/3000 [00:05<07:13,  6.89it/s, loss=10.8005, lr=2.59e-04, mem=0.1GB, mfu=3.8%, step=13]Training:   0%|          | 13/3000 [00:05<07:13,  6.89it/s, loss=10.8136, lr=2.79e-04, mem=0.1GB, mfu=3.8%, step=14]Training:   0%|          | 14/3000 [00:05<06:59,  7.11it/s, loss=10.8136, lr=2.79e-04, mem=0.1GB, mfu=3.8%, step=14]Training:   0%|          | 14/3000 [00:05<06:59,  7.11it/s, loss=10.8178, lr=2.99e-04, mem=0.1GB, mfu=3.8%, step=15]Training:   0%|          | 15/3000 [00:05<06:49,  7.29it/s, loss=10.8178, lr=2.99e-04, mem=0.1GB, mfu=3.8%, step=15]Training:   0%|          | 15/3000 [00:05<06:49,  7.29it/s, loss=10.8034, lr=3.19e-04, mem=0.1GB, mfu=3.8%, step=16]Training:   1%|          | 16/3000 [00:05<06:41,  7.42it/s, loss=10.8034, lr=3.19e-04, mem=0.1GB, mfu=3.8%, step=16]Training:   1%|          | 16/3000 [00:05<06:41,  7.42it/s, loss=10.8253, lr=3.39e-04, mem=0.1GB, mfu=3.8%, step=17]Training:   1%|          | 17/3000 [00:05<06:39,  7.47it/s, loss=10.8253, lr=3.39e-04, mem=0.1GB, mfu=3.8%, step=17]Training:   1%|          | 17/3000 [00:05<06:39,  7.47it/s, loss=10.8198, lr=3.59e-04, mem=0.1GB, mfu=3.8%, step=18]Training:   1%|          | 18/3000 [00:05<06:35,  7.55it/s, loss=10.8198, lr=3.59e-04, mem=0.1GB, mfu=3.8%, step=18]Training:   1%|          | 18/3000 [00:06<06:35,  7.55it/s, loss=10.8207, lr=3.79e-04, mem=0.1GB, mfu=3.8%, step=19]Training:   1%|          | 19/3000 [00:06<06:32,  7.59it/s, loss=10.8207, lr=3.79e-04, mem=0.1GB, mfu=3.8%, step=19]Training:   1%|          | 19/3000 [00:06<06:32,  7.59it/s, loss=10.8132, lr=3.99e-04, mem=0.1GB, mfu=3.8%, step=20]Training:   1%|          | 20/3000 [00:06<06:30,  7.63it/s, loss=10.8132, lr=3.99e-04, mem=0.1GB, mfu=3.8%, step=20]Training:   1%|          | 20/3000 [00:06<06:30,  7.63it/s, loss=10.8255, lr=4.19e-04, mem=0.1GB, mfu=3.8%, step=21]Training:   1%|          | 21/3000 [00:06<06:31,  7.61it/s, loss=10.8255, lr=4.19e-04, mem=0.1GB, mfu=3.8%, step=21]Training:   1%|          | 21/3000 [00:06<06:31,  7.61it/s, loss=10.8114, lr=4.39e-04, mem=0.1GB, mfu=3.8%, step=22]Training:   1%|          | 22/3000 [00:06<06:29,  7.64it/s, loss=10.8114, lr=4.39e-04, mem=0.1GB, mfu=3.8%, step=22]Training:   1%|          | 22/3000 [00:06<06:29,  7.64it/s, loss=10.8053, lr=4.58e-04, mem=0.1GB, mfu=3.8%, step=23]Training:   1%|          | 23/3000 [00:06<06:28,  7.67it/s, loss=10.8053, lr=4.58e-04, mem=0.1GB, mfu=3.8%, step=23]Training:   1%|          | 23/3000 [00:06<06:28,  7.67it/s, loss=10.7945, lr=4.78e-04, mem=0.1GB, mfu=3.8%, step=24]Training:   1%|          | 24/3000 [00:06<06:26,  7.69it/s, loss=10.7945, lr=4.78e-04, mem=0.1GB, mfu=3.8%, step=24]Training:   1%|          | 24/3000 [00:06<06:26,  7.69it/s, loss=10.7793, lr=4.98e-04, mem=0.1GB, mfu=3.8%, step=25]Training:   1%|          | 25/3000 [00:06<06:25,  7.71it/s, loss=10.7793, lr=4.98e-04, mem=0.1GB, mfu=3.8%, step=25]Training:   1%|          | 25/3000 [00:06<06:25,  7.71it/s, loss=10.7809, lr=5.18e-04, mem=0.1GB, mfu=3.8%, step=26]Training:   1%|          | 26/3000 [00:06<06:25,  7.71it/s, loss=10.7809, lr=5.18e-04, mem=0.1GB, mfu=3.8%, step=26]Training:   1%|          | 26/3000 [00:07<06:25,  7.71it/s, loss=10.7972, lr=5.38e-04, mem=0.1GB, mfu=3.8%, step=27]Training:   1%|          | 27/3000 [00:07<06:26,  7.70it/s, loss=10.7972, lr=5.38e-04, mem=0.1GB, mfu=3.8%, step=27]Training:   1%|          | 27/3000 [00:07<06:26,  7.70it/s, loss=10.8675, lr=5.58e-04, mem=0.1GB, mfu=3.8%, step=28]Training:   1%|          | 28/3000 [00:07<06:26,  7.70it/s, loss=10.8675, lr=5.58e-04, mem=0.1GB, mfu=3.8%, step=28]Training:   1%|          | 28/3000 [00:07<06:26,  7.70it/s, loss=10.8598, lr=5.78e-04, mem=0.1GB, mfu=3.8%, step=29]Training:   1%|          | 29/3000 [00:07<06:25,  7.71it/s, loss=10.8598, lr=5.78e-04, mem=0.1GB, mfu=3.8%, step=29]Training:   1%|          | 29/3000 [00:07<06:25,  7.71it/s, loss=10.9012, lr=5.98e-04, mem=0.1GB, mfu=3.8%, step=30]Training:   1%|          | 30/3000 [00:07<06:24,  7.73it/s, loss=10.9012, lr=5.98e-04, mem=0.1GB, mfu=3.8%, step=30]Training:   1%|          | 30/3000 [00:07<06:24,  7.73it/s, loss=10.8876, lr=6.18e-04, mem=0.1GB, mfu=3.8%, step=31]Training:   1%|          | 31/3000 [00:07<06:24,  7.73it/s, loss=10.8876, lr=6.18e-04, mem=0.1GB, mfu=3.8%, step=31]Training:   1%|          | 31/3000 [00:07<06:24,  7.73it/s, loss=11.0458, lr=6.38e-04, mem=0.1GB, mfu=3.8%, step=32]Training:   1%|          | 32/3000 [00:07<06:23,  7.73it/s, loss=11.0458, lr=6.38e-04, mem=0.1GB, mfu=3.8%, step=32]Training:   1%|          | 32/3000 [00:07<06:23,  7.73it/s, loss=11.1038, lr=6.58e-04, mem=0.1GB, mfu=3.8%, step=33]Training:   1%|          | 33/3000 [00:07<06:24,  7.72it/s, loss=11.1038, lr=6.58e-04, mem=0.1GB, mfu=3.8%, step=33]Training:   1%|          | 33/3000 [00:07<06:24,  7.72it/s, loss=11.2215, lr=6.78e-04, mem=0.1GB, mfu=3.8%, step=34]Training:   1%|          | 34/3000 [00:07<06:24,  7.72it/s, loss=11.2215, lr=6.78e-04, mem=0.1GB, mfu=3.8%, step=34]Training:   1%|          | 34/3000 [00:08<06:24,  7.72it/s, loss=11.7420, lr=6.98e-04, mem=0.1GB, mfu=3.8%, step=35]Training:   1%|          | 35/3000 [00:08<06:23,  7.73it/s, loss=11.7420, lr=6.98e-04, mem=0.1GB, mfu=3.8%, step=35]Training:   1%|          | 35/3000 [00:08<06:23,  7.73it/s, loss=11.7404, lr=7.18e-04, mem=0.1GB, mfu=3.8%, step=36]Training:   1%|          | 36/3000 [00:08<06:25,  7.70it/s, loss=11.7404, lr=7.18e-04, mem=0.1GB, mfu=3.8%, step=36]Training:   1%|          | 36/3000 [00:08<06:25,  7.70it/s, loss=12.6244, lr=7.38e-04, mem=0.1GB, mfu=3.8%, step=37]Training:   1%|          | 37/3000 [00:08<06:24,  7.71it/s, loss=12.6244, lr=7.38e-04, mem=0.1GB, mfu=3.8%, step=37]Training:   1%|          | 37/3000 [00:08<06:24,  7.71it/s, loss=13.7523, lr=7.57e-04, mem=0.1GB, mfu=3.8%, step=38]Training:   1%|▏         | 38/3000 [00:08<06:25,  7.69it/s, loss=13.7523, lr=7.57e-04, mem=0.1GB, mfu=3.8%, step=38]Training:   1%|▏         | 38/3000 [00:08<06:25,  7.69it/s, loss=19.0092, lr=7.77e-04, mem=0.1GB, mfu=3.8%, step=39]Training:   1%|▏         | 39/3000 [00:08<06:25,  7.69it/s, loss=19.0092, lr=7.77e-04, mem=0.1GB, mfu=3.8%, step=39]Training:   1%|▏         | 39/3000 [00:08<06:25,  7.69it/s, loss=35.3210, lr=7.97e-04, mem=0.1GB, mfu=3.8%, step=40]Training:   1%|▏         | 40/3000 [00:08<06:24,  7.69it/s, loss=35.3210, lr=7.97e-04, mem=0.1GB, mfu=3.8%, step=40]Training:   1%|▏         | 40/3000 [00:08<06:24,  7.69it/s, loss=27.4685, lr=8.17e-04, mem=0.1GB, mfu=3.8%, step=41]Training:   1%|▏         | 41/3000 [00:08<06:24,  7.69it/s, loss=27.4685, lr=8.17e-04, mem=0.1GB, mfu=3.8%, step=41]Training:   1%|▏         | 41/3000 [00:09<06:24,  7.69it/s, loss=54.8770, lr=8.37e-04, mem=0.1GB, mfu=3.8%, step=42]Training:   1%|▏         | 42/3000 [00:09<06:25,  7.68it/s, loss=54.8770, lr=8.37e-04, mem=0.1GB, mfu=3.8%, step=42]Training:   1%|▏         | 42/3000 [00:09<06:25,  7.68it/s, loss=112.9894, lr=8.57e-04, mem=0.1GB, mfu=3.8%, step=43]Training:   1%|▏         | 43/3000 [00:09<06:24,  7.70it/s, loss=112.9894, lr=8.57e-04, mem=0.1GB, mfu=3.8%, step=43]Training:   1%|▏         | 43/3000 [00:09<06:24,  7.70it/s, loss=85.2826, lr=8.77e-04, mem=0.1GB, mfu=3.8%, step=44] Training:   1%|▏         | 44/3000 [00:09<06:23,  7.71it/s, loss=85.2826, lr=8.77e-04, mem=0.1GB, mfu=3.8%, step=44]Training:   1%|▏         | 44/3000 [00:09<06:23,  7.71it/s, loss=83.8231, lr=8.97e-04, mem=0.1GB, mfu=3.8%, step=45]Training:   2%|▏         | 45/3000 [00:09<06:23,  7.71it/s, loss=83.8231, lr=8.97e-04, mem=0.1GB, mfu=3.8%, step=45]Training:   2%|▏         | 45/3000 [00:09<06:23,  7.71it/s, loss=84.2817, lr=9.17e-04, mem=0.1GB, mfu=3.8%, step=46]Training:   2%|▏         | 46/3000 [00:09<06:23,  7.70it/s, loss=84.2817, lr=9.17e-04, mem=0.1GB, mfu=3.8%, step=46]Training:   2%|▏         | 46/3000 [00:09<06:23,  7.70it/s, loss=56.5352, lr=9.37e-04, mem=0.1GB, mfu=3.8%, step=47]Training:   2%|▏         | 47/3000 [00:09<06:23,  7.70it/s, loss=56.5352, lr=9.37e-04, mem=0.1GB, mfu=3.8%, step=47]Training:   2%|▏         | 47/3000 [00:09<06:23,  7.70it/s, loss=251.9190, lr=9.57e-04, mem=0.1GB, mfu=3.8%, step=48]Training:   2%|▏         | 48/3000 [00:09<06:22,  7.71it/s, loss=251.9190, lr=9.57e-04, mem=0.1GB, mfu=3.8%, step=48]Training:   2%|▏         | 48/3000 [00:09<06:22,  7.71it/s, loss=261.0776, lr=9.77e-04, mem=0.1GB, mfu=3.8%, step=49]Training:   2%|▏         | 49/3000 [00:09<06:23,  7.70it/s, loss=261.0776, lr=9.77e-04, mem=0.1GB, mfu=3.8%, step=49]Training:   2%|▏         | 49/3000 [00:10<06:23,  7.70it/s, loss=203.4852, lr=9.97e-04, mem=0.1GB, mfu=3.8%, step=50]Training:   2%|▏         | 50/3000 [00:10<06:26,  7.63it/s, loss=203.4852, lr=9.97e-04, mem=0.1GB, mfu=3.8%, step=50]Training:   2%|▏         | 50/3000 [00:10<06:26,  7.63it/s, loss=262.8534, lr=1.02e-03, mem=0.1GB, mfu=3.7%, step=51]Training:   2%|▏         | 51/3000 [00:10<06:31,  7.52it/s, loss=262.8534, lr=1.02e-03, mem=0.1GB, mfu=3.7%, step=51]Training:   2%|▏         | 51/3000 [00:10<06:31,  7.52it/s, loss=915.5958, lr=1.04e-03, mem=0.1GB, mfu=3.8%, step=52]Training:   2%|▏         | 52/3000 [00:10<06:28,  7.59it/s, loss=915.5958, lr=1.04e-03, mem=0.1GB, mfu=3.8%, step=52]Training:   2%|▏         | 52/3000 [00:10<06:28,  7.59it/s, loss=1813.0682, lr=1.06e-03, mem=0.1GB, mfu=3.8%, step=53]Training:   2%|▏         | 53/3000 [00:10<06:26,  7.62it/s, loss=1813.0682, lr=1.06e-03, mem=0.1GB, mfu=3.8%, step=53]Training:   2%|▏         | 53/3000 [00:10<06:26,  7.62it/s, loss=3013.7168, lr=1.08e-03, mem=0.1GB, mfu=3.8%, step=54]Training:   2%|▏         | 54/3000 [00:10<06:24,  7.65it/s, loss=3013.7168, lr=1.08e-03, mem=0.1GB, mfu=3.8%, step=54]Training:   2%|▏         | 54/3000 [00:10<06:24,  7.65it/s, loss=5825.3291, lr=1.10e-03, mem=0.1GB, mfu=3.8%, step=55]Training:   2%|▏         | 55/3000 [00:10<06:24,  7.67it/s, loss=5825.3291, lr=1.10e-03, mem=0.1GB, mfu=3.8%, step=55]Training:   2%|▏         | 55/3000 [00:10<06:24,  7.67it/s, loss=180605.6562, lr=1.12e-03, mem=0.1GB, mfu=3.8%, step=56]Training:   2%|▏         | 56/3000 [00:10<06:22,  7.69it/s, loss=180605.6562, lr=1.12e-03, mem=0.1GB, mfu=3.8%, step=56]Training:   2%|▏         | 56/3000 [00:10<06:22,  7.69it/s, loss=8333193.5000, lr=1.14e-03, mem=0.1GB, mfu=3.8%, step=57]Training:   2%|▏         | 57/3000 [00:10<06:22,  7.70it/s, loss=8333193.5000, lr=1.14e-03, mem=0.1GB, mfu=3.8%, step=57]Training:   2%|▏         | 57/3000 [00:11<06:22,  7.70it/s, loss=146242650112.0000, lr=1.16e-03, mem=0.1GB, mfu=3.8%, step=58]Training:   2%|▏         | 58/3000 [00:11<06:21,  7.71it/s, loss=146242650112.0000, lr=1.16e-03, mem=0.1GB, mfu=3.8%, step=58]
+step 0: train loss 10.8846, val loss 10.8840
+v_dict contains 26 parameter entries
+First few keys: ['transformer.wte.weight', 'transformer.wpe.weight', 'transformer.h.0.attn.c_attn.weight', 'transformer.h.0.attn.c_proj.weight', 'transformer.h.0.mlp.c_fc.weight']
+Total parameters to optimize: 39
+LOZO: Using lr = 0.000020, rank = 2
+projected_grad = -8.929251670837402
+DiLoZO Step: No improving direction found out of 10. Using first direction's seed for grad_coeff calculation.
+Traceback (most recent call last):
+  File "/home/allanath/Bureau/ZO_journal/nanoGPT/zo_train.py", line 878, in <module>
+    lossf = loss.item() * gradient_accumulation_steps
+            ^^^^^^^^^
+AttributeError: 'float' object has no attribute 'item'
+Training:   2%|▏         | 58/3000 [00:12<10:20,  4.74it/s, loss=146242650112.0000, lr=1.16e-03, mem=0.1GB, mfu=3.8%, step=58]

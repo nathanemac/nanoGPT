@@ -1,0 +1,705 @@
+nohup: les entrées sont ignorées
+DiKronZO Overnight Testing Script
+==================================================
+Started at: 2025-05-30 21:40:42
+Total experiments: 48
+Experiment directory: dikronzo_experiment_20250530_214042
+All files will be saved in: /home/allanath/Bureau/ZO_journal/dikronzo_experiment_20250530_214042
+
+================================================================================
+EXPERIMENT 1
+================================================================================
+Parameters:
+  kronzo_sampling_number: 1
+  step_interval: 1
+  directional_q: 1
+Started at: 2025-05-30 21:40:42
+Completed in 5.4 minutes
+Exit code: 0
+Best validation loss: 9.1388
+Final training loss: 9.1328
+
+================================================================================
+EXPERIMENT 2
+================================================================================
+Parameters:
+  kronzo_sampling_number: 1
+  step_interval: 1
+  directional_q: 5
+Started at: 2025-05-30 21:46:07
+Completed in 10.9 minutes
+Exit code: 0
+Best validation loss: 8.9487
+Final training loss: 8.9495
+
+================================================================================
+EXPERIMENT 3
+================================================================================
+Parameters:
+  kronzo_sampling_number: 1
+  step_interval: 1
+  directional_q: 10
+Started at: 2025-05-30 21:57:05
+Completed in 19.3 minutes
+Exit code: 0
+Best validation loss: 8.8522
+Final training loss: 8.8515
+
+================================================================================
+EXPERIMENT 4
+================================================================================
+Parameters:
+  kronzo_sampling_number: 1
+  step_interval: 5
+  directional_q: 1
+Started at: 2025-05-30 22:16:26
+Completed in 3.5 minutes
+Exit code: 0
+Best validation loss: 9.1794
+Final training loss: 9.1852
+
+================================================================================
+EXPERIMENT 5
+================================================================================
+Parameters:
+  kronzo_sampling_number: 1
+  step_interval: 5
+  directional_q: 5
+Started at: 2025-05-30 22:20:00
+Completed in 7.3 minutes
+Exit code: 0
+Best validation loss: 8.8818
+Final training loss: 8.8948
+
+================================================================================
+EXPERIMENT 6
+================================================================================
+Parameters:
+  kronzo_sampling_number: 1
+  step_interval: 5
+  directional_q: 10
+Started at: 2025-05-30 22:27:20
+Completed in 12.1 minutes
+Exit code: 0
+Best validation loss: 8.7431
+Final training loss: 8.7499
+
+================================================================================
+EXPERIMENT 7
+================================================================================
+Parameters:
+  kronzo_sampling_number: 1
+  step_interval: 10
+  directional_q: 1
+Started at: 2025-05-30 22:39:31
+Completed in 3.4 minutes
+Exit code: 0
+Best validation loss: 9.0924
+Final training loss: 9.1067
+
+================================================================================
+EXPERIMENT 8
+================================================================================
+Parameters:
+  kronzo_sampling_number: 1
+  step_interval: 10
+  directional_q: 5
+Started at: 2025-05-30 22:42:55
+Completed in 6.9 minutes
+Exit code: 0
+Best validation loss: 8.9024
+Final training loss: 8.9008
+
+================================================================================
+EXPERIMENT 9
+================================================================================
+Parameters:
+  kronzo_sampling_number: 1
+  step_interval: 10
+  directional_q: 10
+Started at: 2025-05-30 22:49:52
+Completed in 11.5 minutes
+Exit code: 0
+Best validation loss: 8.7872
+Final training loss: 8.7670
+
+================================================================================
+EXPERIMENT 10
+================================================================================
+Parameters:
+  kronzo_sampling_number: 1
+  step_interval: 20
+  directional_q: 1
+Started at: 2025-05-30 23:01:23
+Completed in 4.1 minutes
+Exit code: 0
+Best validation loss: 9.1389
+Final training loss: 9.1324
+
+================================================================================
+EXPERIMENT 11
+================================================================================
+Parameters:
+  kronzo_sampling_number: 1
+  step_interval: 20
+  directional_q: 5
+Started at: 2025-05-30 23:05:30
+Completed in 6.8 minutes
+Exit code: 0
+Best validation loss: 8.8783
+Final training loss: 8.8706
+
+================================================================================
+EXPERIMENT 12
+================================================================================
+Parameters:
+  kronzo_sampling_number: 1
+  step_interval: 20
+  directional_q: 10
+Started at: 2025-05-30 23:12:35
+Completed in 11.0 minutes
+Exit code: 0
+Best validation loss: 8.7783
+Final training loss: 8.7767
+
+================================================================================
+EXPERIMENT 13
+================================================================================
+Parameters:
+  kronzo_sampling_number: 2
+  step_interval: 1
+  directional_q: 1
+Started at: 2025-05-30 23:23:37
+Completed in 24.3 minutes
+Exit code: 0
+Best validation loss: 9.2533
+Final training loss: 9.2392
+
+================================================================================
+EXPERIMENT 14
+================================================================================
+Parameters:
+  kronzo_sampling_number: 2
+  step_interval: 1
+  directional_q: 5
+Started at: 2025-05-30 23:47:55
+Completed in 56.3 minutes
+Exit code: 0
+Best validation loss: 8.9520
+Final training loss: 8.9508
+
+================================================================================
+EXPERIMENT 15
+================================================================================
+Parameters:
+  kronzo_sampling_number: 2
+  step_interval: 1
+  directional_q: 10
+Started at: 2025-05-31 00:44:16
+Completed in 95.5 minutes
+Exit code: 0
+Best validation loss: 8.7962
+Final training loss: 8.7869
+
+================================================================================
+EXPERIMENT 16
+================================================================================
+Parameters:
+  kronzo_sampling_number: 2
+  step_interval: 5
+  directional_q: 1
+Started at: 2025-05-31 02:19:50
+Completed in 21.2 minutes
+Exit code: 0
+Best validation loss: 9.2557
+Final training loss: 9.2753
+
+================================================================================
+EXPERIMENT 17
+================================================================================
+Parameters:
+  kronzo_sampling_number: 2
+  step_interval: 5
+  directional_q: 5
+Started at: 2025-05-31 02:41:05
+Completed in 48.5 minutes
+Exit code: 0
+Best validation loss: 8.9778
+Final training loss: 8.9869
+
+================================================================================
+EXPERIMENT 18
+================================================================================
+Parameters:
+  kronzo_sampling_number: 2
+  step_interval: 5
+  directional_q: 10
+Started at: 2025-05-31 03:29:39
+Completed in 84.2 minutes
+Exit code: 0
+Best validation loss: 8.7835
+Final training loss: 8.8018
+
+================================================================================
+EXPERIMENT 19
+================================================================================
+Parameters:
+  kronzo_sampling_number: 2
+  step_interval: 10
+  directional_q: 1
+Started at: 2025-05-31 04:53:53
+Completed in 21.5 minutes
+Exit code: 0
+Best validation loss: 9.2342
+Final training loss: 9.2482
+
+================================================================================
+EXPERIMENT 20
+================================================================================
+Parameters:
+  kronzo_sampling_number: 2
+  step_interval: 10
+  directional_q: 5
+Started at: 2025-05-31 05:15:25
+Completed in 48.0 minutes
+Exit code: 0
+Best validation loss: 8.9491
+Final training loss: 8.9409
+
+================================================================================
+EXPERIMENT 21
+================================================================================
+Parameters:
+  kronzo_sampling_number: 2
+  step_interval: 10
+  directional_q: 10
+Started at: 2025-05-31 06:03:26
+Completed in 82.7 minutes
+Exit code: 0
+Best validation loss: 8.7623
+Final training loss: 8.7674
+
+================================================================================
+EXPERIMENT 22
+================================================================================
+Parameters:
+  kronzo_sampling_number: 2
+  step_interval: 20
+  directional_q: 1
+Started at: 2025-05-31 07:26:13
+Completed in 20.5 minutes
+Exit code: 0
+Best validation loss: 9.2593
+Final training loss: 9.2538
+
+================================================================================
+EXPERIMENT 23
+================================================================================
+Parameters:
+  kronzo_sampling_number: 2
+  step_interval: 20
+  directional_q: 5
+Started at: 2025-05-31 07:46:44
+Completed in 47.8 minutes
+Exit code: 0
+Best validation loss: 8.9327
+Final training loss: 8.9415
+
+================================================================================
+EXPERIMENT 24
+================================================================================
+Parameters:
+  kronzo_sampling_number: 2
+  step_interval: 20
+  directional_q: 10
+Started at: 2025-05-31 08:34:33
+Completed in 82.0 minutes
+Exit code: 0
+Best validation loss: 8.7690
+Final training loss: 8.7895
+
+================================================================================
+EXPERIMENT 25
+================================================================================
+Parameters:
+  kronzo_sampling_number: 5
+  step_interval: 1
+  directional_q: 1
+Started at: 2025-05-31 09:56:32
+Completed in 35.9 minutes
+Exit code: 0
+Best validation loss: 9.7198
+Final training loss: 9.7219
+
+================================================================================
+EXPERIMENT 26
+================================================================================
+Parameters:
+  kronzo_sampling_number: 5
+  step_interval: 1
+  directional_q: 5
+Started at: 2025-05-31 10:32:26
+Completed in 83.7 minutes
+Exit code: 0
+Best validation loss: 9.2674
+Final training loss: 9.2648
+
+================================================================================
+EXPERIMENT 27
+================================================================================
+Parameters:
+  kronzo_sampling_number: 5
+  step_interval: 1
+  directional_q: 10
+Started at: 2025-05-31 11:56:12
+Completed in 143.8 minutes
+Exit code: 0
+Best validation loss: 10.3488
+Final training loss: 10.3545
+
+================================================================================
+EXPERIMENT 28
+================================================================================
+Parameters:
+  kronzo_sampling_number: 5
+  step_interval: 5
+  directional_q: 1
+Started at: 2025-05-31 14:20:01
+Completed in 29.3 minutes
+Exit code: 0
+Best validation loss: 10.3695
+Final training loss: 10.3720
+
+================================================================================
+EXPERIMENT 29
+================================================================================
+Parameters:
+  kronzo_sampling_number: 5
+  step_interval: 5
+  directional_q: 5
+Started at: 2025-05-31 14:49:24
+Completed in 67.5 minutes
+Exit code: 0
+Best validation loss: 10.1227
+Final training loss: 10.1330
+
+================================================================================
+EXPERIMENT 30
+================================================================================
+Parameters:
+  kronzo_sampling_number: 5
+  step_interval: 5
+  directional_q: 10
+Started at: 2025-05-31 15:56:55
+Completed in 114.0 minutes
+Exit code: 0
+Best validation loss: 9.9450
+Final training loss: 9.9506
+
+================================================================================
+EXPERIMENT 31
+================================================================================
+Parameters:
+  kronzo_sampling_number: 5
+  step_interval: 10
+  directional_q: 1
+Started at: 2025-05-31 17:51:00
+Completed in 28.2 minutes
+Exit code: 0
+Best validation loss: 10.2324
+Final training loss: 10.2346
+
+================================================================================
+EXPERIMENT 32
+================================================================================
+Parameters:
+  kronzo_sampling_number: 5
+  step_interval: 10
+  directional_q: 5
+Started at: 2025-05-31 18:19:18
+Completed in 65.3 minutes
+Exit code: 0
+Best validation loss: 9.8375
+Final training loss: 9.8356
+
+================================================================================
+EXPERIMENT 33
+================================================================================
+Parameters:
+  kronzo_sampling_number: 5
+  step_interval: 10
+  directional_q: 10
+Started at: 2025-05-31 19:24:39
+Completed in 110.6 minutes
+Exit code: 0
+Best validation loss: 9.5421
+Final training loss: 9.5449
+
+================================================================================
+EXPERIMENT 34
+================================================================================
+Parameters:
+  kronzo_sampling_number: 5
+  step_interval: 20
+  directional_q: 1
+Started at: 2025-05-31 21:15:14
+Completed in 28.0 minutes
+Exit code: 0
+Best validation loss: 10.0651
+Final training loss: 10.0607
+
+================================================================================
+EXPERIMENT 35
+================================================================================
+Parameters:
+  kronzo_sampling_number: 5
+  step_interval: 20
+  directional_q: 5
+Started at: 2025-05-31 21:43:14
+Completed in 63.8 minutes
+Exit code: 0
+Best validation loss: 9.6483
+Final training loss: 9.6389
+
+================================================================================
+EXPERIMENT 36
+================================================================================
+Parameters:
+  kronzo_sampling_number: 5
+  step_interval: 20
+  directional_q: 10
+Started at: 2025-05-31 22:47:03
+Completed in 108.6 minutes
+Exit code: 0
+Best validation loss: 9.3198
+Final training loss: 9.3192
+
+================================================================================
+EXPERIMENT 37
+================================================================================
+Parameters:
+  kronzo_sampling_number: 10
+  step_interval: 1
+  directional_q: 1
+Started at: 2025-06-01 00:35:43
+Completed in 57.5 minutes
+Exit code: 0
+Best validation loss: 10.6360
+Final training loss: 10.6359
+
+================================================================================
+EXPERIMENT 38
+================================================================================
+Parameters:
+  kronzo_sampling_number: 10
+  step_interval: 1
+  directional_q: 5
+Started at: 2025-06-01 01:33:15
+Completed in 131.5 minutes
+Exit code: 0
+Best validation loss: 10.5486
+Final training loss: 10.5516
+
+================================================================================
+EXPERIMENT 39
+================================================================================
+Parameters:
+  kronzo_sampling_number: 10
+  step_interval: 1
+  directional_q: 10
+Started at: 2025-06-01 03:44:50
+Completed in 223.0 minutes
+Exit code: 0
+Best validation loss: 10.4608
+Final training loss: 10.4637
+
+================================================================================
+EXPERIMENT 40
+================================================================================
+Parameters:
+  kronzo_sampling_number: 10
+  step_interval: 5
+  directional_q: 1
+Started at: 2025-06-01 07:27:52
+Completed in 42.9 minutes
+Exit code: 0
+Best validation loss: 10.5029
+Final training loss: 10.4998
+
+================================================================================
+EXPERIMENT 41
+================================================================================
+Parameters:
+  kronzo_sampling_number: 10
+  step_interval: 5
+  directional_q: 5
+Started at: 2025-06-01 08:10:51
+Completed in 98.5 minutes
+Exit code: 0
+Best validation loss: 10.3581
+Final training loss: 10.3614
+
+================================================================================
+EXPERIMENT 42
+================================================================================
+Parameters:
+  kronzo_sampling_number: 10
+  step_interval: 5
+  directional_q: 10
+Started at: 2025-06-01 09:49:22
+Completed in 167.8 minutes
+Exit code: 0
+Best validation loss: 10.2095
+Final training loss: 10.2087
+
+================================================================================
+EXPERIMENT 43
+================================================================================
+Parameters:
+  kronzo_sampling_number: 10
+  step_interval: 10
+  directional_q: 1
+Started at: 2025-06-01 12:37:14
+Completed in 41.6 minutes
+Exit code: 0
+Best validation loss: 10.4237
+Final training loss: 10.4278
+
+================================================================================
+EXPERIMENT 44
+================================================================================
+Parameters:
+  kronzo_sampling_number: 10
+  step_interval: 10
+  directional_q: 5
+Started at: 2025-06-01 13:18:53
+Completed in 94.5 minutes
+Exit code: 0
+Best validation loss: 10.2178
+Final training loss: 10.2223
+
+================================================================================
+EXPERIMENT 45
+================================================================================
+Parameters:
+  kronzo_sampling_number: 10
+  step_interval: 10
+  directional_q: 10
+Started at: 2025-06-01 14:53:23
+Completed in 160.5 minutes
+Exit code: 0
+Best validation loss: 10.0263
+Final training loss: 10.0260
+
+================================================================================
+EXPERIMENT 46
+================================================================================
+Parameters:
+  kronzo_sampling_number: 10
+  step_interval: 20
+  directional_q: 1
+Started at: 2025-06-01 17:33:53
+Completed in 40.0 minutes
+Exit code: 0
+Best validation loss: 10.3012
+Final training loss: 10.3046
+
+================================================================================
+EXPERIMENT 47
+================================================================================
+Parameters:
+  kronzo_sampling_number: 10
+  step_interval: 20
+  directional_q: 5
+Started at: 2025-06-01 18:13:57
+Completed in 92.4 minutes
+Exit code: 0
+Best validation loss: 10.0637
+Final training loss: 10.0589
+
+================================================================================
+EXPERIMENT 48
+================================================================================
+Parameters:
+  kronzo_sampling_number: 10
+  step_interval: 20
+  directional_q: 10
+Started at: 2025-06-01 19:46:22
+Completed in 156.4 minutes
+Exit code: 0
+Best validation loss: 9.7539
+Final training loss: 9.7572
+
+================================================================================
+FINAL SUMMARY
+================================================================================
+DiKronZO Overnight Test Results
+========================================================================================================================
+Exp  Sampling Interval Dir_Q  Best_Val  Final_Train It/s   Mem(GB)  Steps  Time(min)
+------------------------------------------------------------------------------------------------------------------------
+6    1        5        10     8.7431    8.7499      0.81   0.1      5001   12.1     
+21   2        10       10     8.7623    8.7674      0.96   0.1      5001   82.7     
+24   2        20       10     8.7690    8.7895      0.93   0.1      5001   82.0     
+12   1        20       10     8.7783    8.7767      0.57   0.1      5001   11.0     
+18   2        5        10     8.7835    8.8018      0.93   0.1      5001   84.2     
+9    1        10       10     8.7872    8.7670      0.50   0.1      5001   11.5     
+15   2        1        10     8.7962    8.7869      0.85   0.1      5001   95.5     
+3    1        1        10     8.8522    8.8515      0.68   0.1      5001   19.3     
+11   1        20       5      8.8783    8.8706      0.62   0.1      5001   6.8      
+5    1        5        5      8.8818    8.8948      0.62   0.1      5001   7.3      
+8    1        10       5      8.9024    8.9008      0.59   0.1      5001   6.9      
+23   2        20       5      8.9327    8.9415      0.83   0.1      5001   47.8     
+2    1        1        5      8.9487    8.9495      0.60   0.1      5001   10.9     
+20   2        10       5      8.9491    8.9409      0.85   0.1      5001   48.0     
+14   2        1        5      8.9520    8.9508      0.84   0.1      5001   56.3     
+17   2        5        5      8.9778    8.9869      0.84   0.1      5001   48.5     
+7    1        10       1      9.0924    9.1067      0.27   0.1      5001   3.4      
+1    1        1        1      9.1388    9.1328      0.64   0.1      5001   5.4      
+10   1        20       1      9.1389    9.1324      0.29   0.1      5001   4.1      
+4    1        5        1      9.1794    9.1852      0.27   0.1      5001   3.5      
+19   2        10       1      9.2342    9.2482      0.66   0.1      5001   21.5     
+13   2        1        1      9.2533    9.2392      0.91   0.1      5001   24.3     
+16   2        5        1      9.2557    9.2753      0.65   0.1      5001   21.2     
+22   2        20       1      9.2593    9.2538      0.69   0.1      5001   20.5     
+26   5        1        5      9.2674    9.2648      0.96   0.1      5001   83.7     
+36   5        20       10     9.3198    9.3192      0.76   0.1      5001   108.6    
+33   5        10       10     9.5421    9.5449      0.74   0.1      5001   110.6    
+35   5        20       5      9.6483    9.6389      0.78   0.1      5001   63.8     
+25   5        1        1      9.7198    9.7219      0.93   0.1      5001   35.9     
+48   10       20       10     9.7539    9.7572      0.53   0.1      5001   156.4    
+32   5        10       5      9.8375    9.8356      0.82   0.1      5001   65.3     
+30   5        5        10     9.9450    9.9506      0.69   0.1      5001   114.0    
+45   10       10       10     10.0263   10.0260     0.52   0.1      5001   160.5    
+47   10       20       5      10.0637   10.0589     0.91   0.1      5001   92.4     
+34   5        20       1      10.0651   10.0607     0.92   0.1      5001   28.0     
+29   5        5        5      10.1227   10.1330     0.80   0.1      5001   67.5     
+42   10       5        10     10.2095   10.2087     0.50   0.1      5001   167.8    
+44   10       10       5      10.2178   10.2223     0.88   0.1      5001   94.5     
+31   5        10       1      10.2324   10.2346     0.79   0.1      5001   28.2     
+46   10       20       1      10.3012   10.3046     0.83   0.1      5001   40.0     
+27   5        1        10     10.3488   10.3545     0.57   0.1      5001   143.8    
+41   10       5        5      10.3581   10.3614     0.84   0.1      5001   98.5     
+28   5        5        1      10.3695   10.3720     0.86   0.1      5001   29.3     
+43   10       10       1      10.4237   10.4278     0.80   0.1      5001   41.6     
+39   10       1        10     10.4608   10.4637     0.37   0.1      5001   223.0    
+40   10       5        1      10.5029   10.4998     0.78   0.1      5001   42.9     
+38   10       1        5      10.5486   10.5516     0.61   0.1      5001   131.5    
+37   10       1        1      10.6360   10.6359     0.71   0.1      5001   57.5     
+------------------------------------------------------------------------------------------------------------------------
+Total successful runs: 48 / 48
+
+Analysis:
+----------------------------------------
+Best validation loss: 8.7431
+Best configuration:
+  kronzo_sampling_number: 1
+  step_interval: 5
+  directional_q: 10
+
+Fastest training: 0.96 it/s (Exp 21)
+Lowest memory usage: 0.1 GB (Exp 6)
+
+All results saved to: dikronzo_experiment_20250530_214042/
+Summary: dikronzo_experiment_20250530_214042/summary.txt
+Detailed results: dikronzo_experiment_20250530_214042/results/all_results.json
+Completed at: 2025-06-01 22:22:51

@@ -1,0 +1,1589 @@
+nohup: les entrées sont ignorées
+Directional ZO Methods Overnight Testing Script
+======================================================================
+Started at: 2025-05-31 11:12:27
+Total experiments: 96
+Methods: ['dilozo', 'dimezo', 'dikronzo']
+Momentum settings: [False, True]
+Learning rates: [0.0006, 0.001, 0.003, 0.006]
+zo_eps values: [0.0005, 0.001, 0.002, 0.005]
+
+Method details:
+- dilozo: DiLoZO (with and without momentum)
+- dimezo: DiMeZO (with and without momentum)
+- dikronzo: DiKronZO (with and without momentum)
+
+Parameter rationale:
+- Learning rates: Appropriate for ZO methods in pretraining
+- zo_eps: Fine to coarse perturbations
+- min_lr: Set dynamically to lr/10 for proper learning rate decay
+- momentum: All methods now support momentum (beta=0.9)
+Experiment directory: directional_zo_experiment_20250531_111227
+All files will be saved in: /home/allanath/Bureau/ZO_journal/directional_zo_experiment_20250531_111227
+
+================================================================================
+EXPERIMENT 1
+================================================================================
+Parameters:
+  method: dilozo
+  learning_rate: 0.0006
+  zo_eps: 0.0005
+  use_momentum: False
+  min_lr: 6e-05
+Started at: 2025-05-31 11:12:27
+Completed in 6.7 minutes
+Exit code: 0
+Best validation loss: 10.8258
+Final training loss: 10.8258
+
+================================================================================
+EXPERIMENT 2
+================================================================================
+Parameters:
+  method: dilozo
+  learning_rate: 0.0006
+  zo_eps: 0.001
+  use_momentum: False
+  min_lr: 6e-05
+Started at: 2025-05-31 11:19:11
+Completed in 6.8 minutes
+Exit code: 0
+Best validation loss: 9.2691
+Final training loss: 9.2784
+
+================================================================================
+EXPERIMENT 3
+================================================================================
+Parameters:
+  method: dilozo
+  learning_rate: 0.0006
+  zo_eps: 0.002
+  use_momentum: False
+  min_lr: 6e-05
+Started at: 2025-05-31 11:26:03
+Completed in 6.9 minutes
+Exit code: 0
+Best validation loss: 9.0099
+Final training loss: 8.9924
+
+================================================================================
+EXPERIMENT 4
+================================================================================
+Parameters:
+  method: dilozo
+  learning_rate: 0.0006
+  zo_eps: 0.005
+  use_momentum: False
+  min_lr: 6e-05
+Started at: 2025-05-31 11:32:59
+Completed in 7.3 minutes
+Exit code: 0
+Best validation loss: 9.0514
+Final training loss: 9.0295
+
+================================================================================
+EXPERIMENT 5
+================================================================================
+Parameters:
+  method: dilozo
+  learning_rate: 0.001
+  zo_eps: 0.0005
+  use_momentum: False
+  min_lr: 1e-04
+Started at: 2025-05-31 11:40:17
+Completed in 6.9 minutes
+Exit code: 0
+Best validation loss: 10.8258
+Final training loss: 10.8258
+
+================================================================================
+EXPERIMENT 6
+================================================================================
+Parameters:
+  method: dilozo
+  learning_rate: 0.001
+  zo_eps: 0.001
+  use_momentum: False
+  min_lr: 1e-04
+Started at: 2025-05-31 11:47:13
+Completed in 6.8 minutes
+Exit code: 0
+Best validation loss: 10.8258
+Final training loss: 10.8258
+
+================================================================================
+EXPERIMENT 7
+================================================================================
+Parameters:
+  method: dilozo
+  learning_rate: 0.001
+  zo_eps: 0.002
+  use_momentum: False
+  min_lr: 1e-04
+Started at: 2025-05-31 11:54:01
+Completed in 6.8 minutes
+Exit code: 0
+Best validation loss: 10.8258
+Final training loss: 10.8258
+
+================================================================================
+EXPERIMENT 8
+================================================================================
+Parameters:
+  method: dilozo
+  learning_rate: 0.001
+  zo_eps: 0.005
+  use_momentum: False
+  min_lr: 1e-04
+Started at: 2025-05-31 12:00:52
+Completed in 1.0 minutes
+Exit code: 1
+Best validation loss: 10.8840
+Final training loss: 10.8846
+
+================================================================================
+EXPERIMENT 9
+================================================================================
+Parameters:
+  method: dilozo
+  learning_rate: 0.003
+  zo_eps: 0.0005
+  use_momentum: False
+  min_lr: 3e-04
+Started at: 2025-05-31 12:01:54
+Completed in 6.7 minutes
+Exit code: 0
+Best validation loss: 10.8258
+Final training loss: 10.8258
+
+================================================================================
+EXPERIMENT 10
+================================================================================
+Parameters:
+  method: dilozo
+  learning_rate: 0.003
+  zo_eps: 0.001
+  use_momentum: False
+  min_lr: 3e-04
+Started at: 2025-05-31 12:08:39
+Completed in 6.8 minutes
+Exit code: 0
+Best validation loss: 10.8258
+Final training loss: 10.8258
+
+================================================================================
+EXPERIMENT 11
+================================================================================
+Parameters:
+  method: dilozo
+  learning_rate: 0.003
+  zo_eps: 0.002
+  use_momentum: False
+  min_lr: 3e-04
+Started at: 2025-05-31 12:15:31
+Completed in 6.7 minutes
+Exit code: 0
+Best validation loss: 10.8258
+Final training loss: 10.8258
+
+================================================================================
+EXPERIMENT 12
+================================================================================
+Parameters:
+  method: dilozo
+  learning_rate: 0.003
+  zo_eps: 0.005
+  use_momentum: False
+  min_lr: 3e-04
+Started at: 2025-05-31 12:22:15
+Completed in 6.8 minutes
+Exit code: 0
+Best validation loss: 10.8258
+Final training loss: 10.8258
+
+================================================================================
+EXPERIMENT 13
+================================================================================
+Parameters:
+  method: dilozo
+  learning_rate: 0.006
+  zo_eps: 0.0005
+  use_momentum: False
+  min_lr: 6e-04
+Started at: 2025-05-31 12:29:02
+Completed in 0.3 minutes
+Exit code: 1
+Best validation loss: 10.8840
+Final training loss: 10.8846
+
+================================================================================
+EXPERIMENT 14
+================================================================================
+Parameters:
+  method: dilozo
+  learning_rate: 0.006
+  zo_eps: 0.001
+  use_momentum: False
+  min_lr: 6e-04
+Started at: 2025-05-31 12:29:23
+Completed in 0.3 minutes
+Exit code: 1
+Best validation loss: 10.8840
+Final training loss: 10.8846
+
+================================================================================
+EXPERIMENT 15
+================================================================================
+Parameters:
+  method: dilozo
+  learning_rate: 0.006
+  zo_eps: 0.002
+  use_momentum: False
+  min_lr: 6e-04
+Started at: 2025-05-31 12:29:43
+Completed in 6.8 minutes
+Exit code: 0
+Best validation loss: 10.8258
+Final training loss: 10.8258
+
+================================================================================
+EXPERIMENT 16
+================================================================================
+Parameters:
+  method: dilozo
+  learning_rate: 0.006
+  zo_eps: 0.005
+  use_momentum: False
+  min_lr: 6e-04
+Started at: 2025-05-31 12:36:35
+Completed in 6.9 minutes
+Exit code: 0
+Best validation loss: 10.8258
+Final training loss: 10.8258
+
+================================================================================
+EXPERIMENT 17
+================================================================================
+Parameters:
+  method: dilozo
+  learning_rate: 0.0006
+  zo_eps: 0.0005
+  use_momentum: True
+  min_lr: 6e-05
+Started at: 2025-05-31 12:43:31
+Completed in 7.3 minutes
+Exit code: 0
+Best validation loss: 8.9261
+Final training loss: 8.9288
+
+================================================================================
+EXPERIMENT 18
+================================================================================
+Parameters:
+  method: dilozo
+  learning_rate: 0.0006
+  zo_eps: 0.001
+  use_momentum: True
+  min_lr: 6e-05
+Started at: 2025-05-31 12:50:49
+Completed in 7.1 minutes
+Exit code: 0
+Best validation loss: 8.9737
+Final training loss: 8.9710
+
+================================================================================
+EXPERIMENT 19
+================================================================================
+Parameters:
+  method: dilozo
+  learning_rate: 0.0006
+  zo_eps: 0.002
+  use_momentum: True
+  min_lr: 6e-05
+Started at: 2025-05-31 12:57:57
+Completed in 7.2 minutes
+Exit code: 0
+Best validation loss: 8.9360
+Final training loss: 8.9414
+
+================================================================================
+EXPERIMENT 20
+================================================================================
+Parameters:
+  method: dilozo
+  learning_rate: 0.0006
+  zo_eps: 0.005
+  use_momentum: True
+  min_lr: 6e-05
+Started at: 2025-05-31 13:05:09
+Completed in 7.1 minutes
+Exit code: 0
+Best validation loss: 9.1661
+Final training loss: 9.1736
+
+================================================================================
+EXPERIMENT 21
+================================================================================
+Parameters:
+  method: dilozo
+  learning_rate: 0.001
+  zo_eps: 0.0005
+  use_momentum: True
+  min_lr: 1e-04
+Started at: 2025-05-31 13:12:18
+Completed in 7.2 minutes
+Exit code: 0
+Best validation loss: 8.9220
+Final training loss: 8.9024
+
+================================================================================
+EXPERIMENT 22
+================================================================================
+Parameters:
+  method: dilozo
+  learning_rate: 0.001
+  zo_eps: 0.001
+  use_momentum: True
+  min_lr: 1e-04
+Started at: 2025-05-31 13:19:30
+Completed in 7.2 minutes
+Exit code: 0
+Best validation loss: 8.8907
+Final training loss: 8.8894
+
+================================================================================
+EXPERIMENT 23
+================================================================================
+Parameters:
+  method: dilozo
+  learning_rate: 0.001
+  zo_eps: 0.002
+  use_momentum: True
+  min_lr: 1e-04
+Started at: 2025-05-31 13:26:42
+Completed in 7.2 minutes
+Exit code: 0
+Best validation loss: 8.9622
+Final training loss: 8.9988
+
+================================================================================
+EXPERIMENT 24
+================================================================================
+Parameters:
+  method: dilozo
+  learning_rate: 0.001
+  zo_eps: 0.005
+  use_momentum: True
+  min_lr: 1e-04
+Started at: 2025-05-31 13:33:59
+Completed in 7.4 minutes
+Exit code: 0
+Best validation loss: 9.1499
+Final training loss: 9.1341
+
+================================================================================
+EXPERIMENT 25
+================================================================================
+Parameters:
+  method: dilozo
+  learning_rate: 0.003
+  zo_eps: 0.0005
+  use_momentum: True
+  min_lr: 3e-04
+Started at: 2025-05-31 13:41:23
+Completed in 7.0 minutes
+Exit code: 0
+Best validation loss: 10.8258
+Final training loss: 10.8258
+
+================================================================================
+EXPERIMENT 26
+================================================================================
+Parameters:
+  method: dilozo
+  learning_rate: 0.003
+  zo_eps: 0.001
+  use_momentum: True
+  min_lr: 3e-04
+Started at: 2025-05-31 13:48:26
+Completed in 7.0 minutes
+Exit code: 0
+Best validation loss: 10.8258
+Final training loss: 10.8258
+
+================================================================================
+EXPERIMENT 27
+================================================================================
+Parameters:
+  method: dilozo
+  learning_rate: 0.003
+  zo_eps: 0.002
+  use_momentum: True
+  min_lr: 3e-04
+Started at: 2025-05-31 13:55:25
+Completed in 7.1 minutes
+Exit code: 0
+Best validation loss: 10.8258
+Final training loss: 10.8258
+
+================================================================================
+EXPERIMENT 28
+================================================================================
+Parameters:
+  method: dilozo
+  learning_rate: 0.003
+  zo_eps: 0.005
+  use_momentum: True
+  min_lr: 3e-04
+Started at: 2025-05-31 14:02:31
+Completed in 7.0 minutes
+Exit code: 0
+Best validation loss: 10.8258
+Final training loss: 10.8258
+
+================================================================================
+EXPERIMENT 29
+================================================================================
+Parameters:
+  method: dilozo
+  learning_rate: 0.006
+  zo_eps: 0.0005
+  use_momentum: True
+  min_lr: 6e-04
+Started at: 2025-05-31 14:09:32
+Completed in 0.6 minutes
+Exit code: 1
+Best validation loss: 10.8840
+Final training loss: 10.8846
+
+================================================================================
+EXPERIMENT 30
+================================================================================
+Parameters:
+  method: dilozo
+  learning_rate: 0.006
+  zo_eps: 0.001
+  use_momentum: True
+  min_lr: 6e-04
+Started at: 2025-05-31 14:10:08
+Completed in 7.0 minutes
+Exit code: 0
+Best validation loss: 10.8258
+Final training loss: 10.8258
+
+================================================================================
+EXPERIMENT 31
+================================================================================
+Parameters:
+  method: dilozo
+  learning_rate: 0.006
+  zo_eps: 0.002
+  use_momentum: True
+  min_lr: 6e-04
+Started at: 2025-05-31 14:17:08
+Completed in 6.9 minutes
+Exit code: 0
+Best validation loss: 10.8258
+Final training loss: 10.8258
+
+================================================================================
+EXPERIMENT 32
+================================================================================
+Parameters:
+  method: dilozo
+  learning_rate: 0.006
+  zo_eps: 0.005
+  use_momentum: True
+  min_lr: 6e-04
+Started at: 2025-05-31 14:24:07
+Completed in 7.0 minutes
+Exit code: 0
+Best validation loss: 10.8258
+Final training loss: 10.8258
+
+================================================================================
+EXPERIMENT 33
+================================================================================
+Parameters:
+  method: dimezo
+  learning_rate: 0.0006
+  zo_eps: 0.0005
+  use_momentum: False
+  min_lr: 6e-05
+Started at: 2025-05-31 14:31:11
+Completed in 6.3 minutes
+Exit code: 0
+Best validation loss: 9.0198
+Final training loss: 9.0000
+
+================================================================================
+EXPERIMENT 34
+================================================================================
+Parameters:
+  method: dimezo
+  learning_rate: 0.0006
+  zo_eps: 0.001
+  use_momentum: False
+  min_lr: 6e-05
+Started at: 2025-05-31 14:37:30
+Completed in 6.3 minutes
+Exit code: 0
+Best validation loss: 9.0346
+Final training loss: 8.9933
+
+================================================================================
+EXPERIMENT 35
+================================================================================
+Parameters:
+  method: dimezo
+  learning_rate: 0.0006
+  zo_eps: 0.002
+  use_momentum: False
+  min_lr: 6e-05
+Started at: 2025-05-31 14:43:48
+Completed in 6.1 minutes
+Exit code: 0
+Best validation loss: 8.9310
+Final training loss: 8.9325
+
+================================================================================
+EXPERIMENT 36
+================================================================================
+Parameters:
+  method: dimezo
+  learning_rate: 0.0006
+  zo_eps: 0.005
+  use_momentum: False
+  min_lr: 6e-05
+Started at: 2025-05-31 14:49:55
+Completed in 6.2 minutes
+Exit code: 0
+Best validation loss: 8.9723
+Final training loss: 8.9652
+
+================================================================================
+EXPERIMENT 37
+================================================================================
+Parameters:
+  method: dimezo
+  learning_rate: 0.001
+  zo_eps: 0.0005
+  use_momentum: False
+  min_lr: 1e-04
+Started at: 2025-05-31 14:56:07
+Completed in 6.0 minutes
+Exit code: 0
+Best validation loss: 9.0563
+Final training loss: 9.0563
+
+================================================================================
+EXPERIMENT 38
+================================================================================
+Parameters:
+  method: dimezo
+  learning_rate: 0.001
+  zo_eps: 0.001
+  use_momentum: False
+  min_lr: 1e-04
+Started at: 2025-05-31 15:02:10
+Completed in 6.0 minutes
+Exit code: 0
+Best validation loss: 9.0834
+Final training loss: 9.0912
+
+================================================================================
+EXPERIMENT 39
+================================================================================
+Parameters:
+  method: dimezo
+  learning_rate: 0.001
+  zo_eps: 0.002
+  use_momentum: False
+  min_lr: 1e-04
+Started at: 2025-05-31 15:08:10
+Completed in 6.1 minutes
+Exit code: 0
+Best validation loss: 9.0335
+Final training loss: 9.0383
+
+================================================================================
+EXPERIMENT 40
+================================================================================
+Parameters:
+  method: dimezo
+  learning_rate: 0.001
+  zo_eps: 0.005
+  use_momentum: False
+  min_lr: 1e-04
+Started at: 2025-05-31 15:14:19
+Completed in 6.3 minutes
+Exit code: 0
+Best validation loss: 9.0105
+Final training loss: 8.9875
+
+================================================================================
+EXPERIMENT 41
+================================================================================
+Parameters:
+  method: dimezo
+  learning_rate: 0.003
+  zo_eps: 0.0005
+  use_momentum: False
+  min_lr: 3e-04
+Started at: 2025-05-31 15:20:38
+Completed in 6.0 minutes
+Exit code: 0
+Best validation loss: 10.8258
+Final training loss: 10.8258
+
+================================================================================
+EXPERIMENT 42
+================================================================================
+Parameters:
+  method: dimezo
+  learning_rate: 0.003
+  zo_eps: 0.001
+  use_momentum: False
+  min_lr: 3e-04
+Started at: 2025-05-31 15:26:42
+Completed in 5.9 minutes
+Exit code: 0
+Best validation loss: 10.8258
+Final training loss: 10.8258
+
+================================================================================
+EXPERIMENT 43
+================================================================================
+Parameters:
+  method: dimezo
+  learning_rate: 0.003
+  zo_eps: 0.002
+  use_momentum: False
+  min_lr: 3e-04
+Started at: 2025-05-31 15:32:40
+Completed in 5.9 minutes
+Exit code: 0
+Best validation loss: 10.8258
+Final training loss: 10.8258
+
+================================================================================
+EXPERIMENT 44
+================================================================================
+Parameters:
+  method: dimezo
+  learning_rate: 0.003
+  zo_eps: 0.005
+  use_momentum: False
+  min_lr: 3e-04
+Started at: 2025-05-31 15:38:34
+Completed in 6.1 minutes
+Exit code: 0
+Best validation loss: 10.8840
+Final training loss: 11.0378
+
+================================================================================
+EXPERIMENT 45
+================================================================================
+Parameters:
+  method: dimezo
+  learning_rate: 0.006
+  zo_eps: 0.0005
+  use_momentum: False
+  min_lr: 6e-04
+Started at: 2025-05-31 15:44:44
+Completed in 5.9 minutes
+Exit code: 0
+Best validation loss: 10.8258
+Final training loss: 10.8258
+
+================================================================================
+EXPERIMENT 46
+================================================================================
+Parameters:
+  method: dimezo
+  learning_rate: 0.006
+  zo_eps: 0.001
+  use_momentum: False
+  min_lr: 6e-04
+Started at: 2025-05-31 15:50:42
+Completed in 5.9 minutes
+Exit code: 0
+Best validation loss: 10.8258
+Final training loss: 10.8258
+
+================================================================================
+EXPERIMENT 47
+================================================================================
+Parameters:
+  method: dimezo
+  learning_rate: 0.006
+  zo_eps: 0.002
+  use_momentum: False
+  min_lr: 6e-04
+Started at: 2025-05-31 15:56:38
+Completed in 5.8 minutes
+Exit code: 0
+Best validation loss: 10.8258
+Final training loss: 10.8258
+
+================================================================================
+EXPERIMENT 48
+================================================================================
+Parameters:
+  method: dimezo
+  learning_rate: 0.006
+  zo_eps: 0.005
+  use_momentum: False
+  min_lr: 6e-04
+Started at: 2025-05-31 16:02:26
+Completed in 5.8 minutes
+Exit code: 0
+Best validation loss: 10.8258
+Final training loss: 10.8258
+
+================================================================================
+EXPERIMENT 49
+================================================================================
+Parameters:
+  method: dimezo
+  learning_rate: 0.0006
+  zo_eps: 0.0005
+  use_momentum: True
+  min_lr: 6e-05
+Started at: 2025-05-31 16:08:16
+Completed in 6.1 minutes
+Exit code: 0
+Best validation loss: 9.0217
+Final training loss: 9.0136
+
+================================================================================
+EXPERIMENT 50
+================================================================================
+Parameters:
+  method: dimezo
+  learning_rate: 0.0006
+  zo_eps: 0.001
+  use_momentum: True
+  min_lr: 6e-05
+Started at: 2025-05-31 16:14:26
+Completed in 6.1 minutes
+Exit code: 0
+Best validation loss: 8.9925
+Final training loss: 8.9672
+
+================================================================================
+EXPERIMENT 51
+================================================================================
+Parameters:
+  method: dimezo
+  learning_rate: 0.0006
+  zo_eps: 0.002
+  use_momentum: True
+  min_lr: 6e-05
+Started at: 2025-05-31 16:20:33
+Completed in 6.2 minutes
+Exit code: 0
+Best validation loss: 8.9961
+Final training loss: 8.9931
+
+================================================================================
+EXPERIMENT 52
+================================================================================
+Parameters:
+  method: dimezo
+  learning_rate: 0.0006
+  zo_eps: 0.005
+  use_momentum: True
+  min_lr: 6e-05
+Started at: 2025-05-31 16:26:49
+Completed in 6.3 minutes
+Exit code: 0
+Best validation loss: 8.9571
+Final training loss: 8.9410
+
+================================================================================
+EXPERIMENT 53
+================================================================================
+Parameters:
+  method: dimezo
+  learning_rate: 0.001
+  zo_eps: 0.0005
+  use_momentum: True
+  min_lr: 1e-04
+Started at: 2025-05-31 16:33:10
+Completed in 6.2 minutes
+Exit code: 0
+Best validation loss: 9.1174
+Final training loss: 9.1091
+
+================================================================================
+EXPERIMENT 54
+================================================================================
+Parameters:
+  method: dimezo
+  learning_rate: 0.001
+  zo_eps: 0.001
+  use_momentum: True
+  min_lr: 1e-04
+Started at: 2025-05-31 16:39:23
+Completed in 6.1 minutes
+Exit code: 0
+Best validation loss: 9.0812
+Final training loss: 9.0618
+
+================================================================================
+EXPERIMENT 55
+================================================================================
+Parameters:
+  method: dimezo
+  learning_rate: 0.001
+  zo_eps: 0.002
+  use_momentum: True
+  min_lr: 1e-04
+Started at: 2025-05-31 16:45:28
+Completed in 6.1 minutes
+Exit code: 0
+Best validation loss: 9.0215
+Final training loss: 9.0243
+
+================================================================================
+EXPERIMENT 56
+================================================================================
+Parameters:
+  method: dimezo
+  learning_rate: 0.001
+  zo_eps: 0.005
+  use_momentum: True
+  min_lr: 1e-04
+Started at: 2025-05-31 16:51:35
+Completed in 6.1 minutes
+Exit code: 0
+Best validation loss: 8.9921
+Final training loss: 8.9931
+
+================================================================================
+EXPERIMENT 57
+================================================================================
+Parameters:
+  method: dimezo
+  learning_rate: 0.003
+  zo_eps: 0.0005
+  use_momentum: True
+  min_lr: 3e-04
+Started at: 2025-05-31 16:57:41
+Completed in 5.9 minutes
+Exit code: 0
+Best validation loss: 10.8258
+Final training loss: 10.8258
+
+================================================================================
+EXPERIMENT 58
+================================================================================
+Parameters:
+  method: dimezo
+  learning_rate: 0.003
+  zo_eps: 0.001
+  use_momentum: True
+  min_lr: 3e-04
+Started at: 2025-05-31 17:03:38
+Completed in 5.9 minutes
+Exit code: 0
+Best validation loss: 10.8258
+Final training loss: 10.8258
+
+================================================================================
+EXPERIMENT 59
+================================================================================
+Parameters:
+  method: dimezo
+  learning_rate: 0.003
+  zo_eps: 0.002
+  use_momentum: True
+  min_lr: 3e-04
+Started at: 2025-05-31 17:09:34
+Completed in 5.9 minutes
+Exit code: 0
+Best validation loss: 10.8258
+Final training loss: 10.8258
+
+================================================================================
+EXPERIMENT 60
+================================================================================
+Parameters:
+  method: dimezo
+  learning_rate: 0.003
+  zo_eps: 0.005
+  use_momentum: True
+  min_lr: 3e-04
+Started at: 2025-05-31 17:15:28
+Completed in 6.3 minutes
+Exit code: 0
+Best validation loss: 10.6271
+Final training loss: 10.6332
+
+================================================================================
+EXPERIMENT 61
+================================================================================
+Parameters:
+  method: dimezo
+  learning_rate: 0.006
+  zo_eps: 0.0005
+  use_momentum: True
+  min_lr: 6e-04
+Started at: 2025-05-31 17:21:46
+Completed in 5.8 minutes
+Exit code: 0
+Best validation loss: 10.8840
+Final training loss: 10.8846
+
+================================================================================
+EXPERIMENT 62
+================================================================================
+Parameters:
+  method: dimezo
+  learning_rate: 0.006
+  zo_eps: 0.001
+  use_momentum: True
+  min_lr: 6e-04
+Started at: 2025-05-31 17:27:38
+Completed in 6.2 minutes
+Exit code: 0
+Best validation loss: 10.8258
+Final training loss: 10.8258
+
+================================================================================
+EXPERIMENT 63
+================================================================================
+Parameters:
+  method: dimezo
+  learning_rate: 0.006
+  zo_eps: 0.002
+  use_momentum: True
+  min_lr: 6e-04
+Started at: 2025-05-31 17:33:54
+Completed in 5.9 minutes
+Exit code: 0
+Best validation loss: 10.8258
+Final training loss: 10.8258
+
+================================================================================
+EXPERIMENT 64
+================================================================================
+Parameters:
+  method: dimezo
+  learning_rate: 0.006
+  zo_eps: 0.005
+  use_momentum: True
+  min_lr: 6e-04
+Started at: 2025-05-31 17:39:52
+Completed in 5.9 minutes
+Exit code: 0
+Best validation loss: 10.8258
+Final training loss: 10.8258
+
+================================================================================
+EXPERIMENT 65
+================================================================================
+Parameters:
+  method: dikronzo
+  learning_rate: 0.0006
+  zo_eps: 0.0005
+  use_momentum: False
+  min_lr: 6e-05
+Started at: 2025-05-31 17:45:46
+Completed in 48.6 minutes
+Exit code: 0
+Best validation loss: 9.0522
+Final training loss: 9.0533
+
+================================================================================
+EXPERIMENT 66
+================================================================================
+Parameters:
+  method: dikronzo
+  learning_rate: 0.0006
+  zo_eps: 0.001
+  use_momentum: False
+  min_lr: 6e-05
+Started at: 2025-05-31 18:34:26
+Completed in 48.9 minutes
+Exit code: 0
+Best validation loss: 9.0259
+Final training loss: 9.0303
+
+================================================================================
+EXPERIMENT 67
+================================================================================
+Parameters:
+  method: dikronzo
+  learning_rate: 0.0006
+  zo_eps: 0.002
+  use_momentum: False
+  min_lr: 6e-05
+Started at: 2025-05-31 19:23:25
+Completed in 48.5 minutes
+Exit code: 0
+Best validation loss: 9.0131
+Final training loss: 9.0163
+
+================================================================================
+EXPERIMENT 68
+================================================================================
+Parameters:
+  method: dikronzo
+  learning_rate: 0.0006
+  zo_eps: 0.005
+  use_momentum: False
+  min_lr: 6e-05
+Started at: 2025-05-31 20:11:54
+Completed in 48.6 minutes
+Exit code: 0
+Best validation loss: 9.0522
+Final training loss: 9.0463
+
+================================================================================
+EXPERIMENT 69
+================================================================================
+Parameters:
+  method: dikronzo
+  learning_rate: 0.001
+  zo_eps: 0.0005
+  use_momentum: False
+  min_lr: 1e-04
+Started at: 2025-05-31 21:00:31
+Completed in 48.6 minutes
+Exit code: 0
+Best validation loss: 8.9611
+Final training loss: 8.9683
+
+================================================================================
+EXPERIMENT 70
+================================================================================
+Parameters:
+  method: dikronzo
+  learning_rate: 0.001
+  zo_eps: 0.001
+  use_momentum: False
+  min_lr: 1e-04
+Started at: 2025-05-31 21:49:09
+Completed in 48.8 minutes
+Exit code: 0
+Best validation loss: 9.0061
+Final training loss: 8.9965
+
+================================================================================
+EXPERIMENT 71
+================================================================================
+Parameters:
+  method: dikronzo
+  learning_rate: 0.001
+  zo_eps: 0.002
+  use_momentum: False
+  min_lr: 1e-04
+Started at: 2025-05-31 22:37:58
+Completed in 48.6 minutes
+Exit code: 0
+Best validation loss: 8.9564
+Final training loss: 8.9659
+
+================================================================================
+EXPERIMENT 72
+================================================================================
+Parameters:
+  method: dikronzo
+  learning_rate: 0.001
+  zo_eps: 0.005
+  use_momentum: False
+  min_lr: 1e-04
+Started at: 2025-05-31 23:26:36
+Completed in 48.9 minutes
+Exit code: 0
+Best validation loss: 8.9195
+Final training loss: 8.9364
+
+================================================================================
+EXPERIMENT 73
+================================================================================
+Parameters:
+  method: dikronzo
+  learning_rate: 0.003
+  zo_eps: 0.0005
+  use_momentum: False
+  min_lr: 3e-04
+Started at: 2025-06-01 00:15:32
+Completed in 48.9 minutes
+Exit code: 0
+Best validation loss: 9.1535
+Final training loss: 9.1411
+
+================================================================================
+EXPERIMENT 74
+================================================================================
+Parameters:
+  method: dikronzo
+  learning_rate: 0.003
+  zo_eps: 0.001
+  use_momentum: False
+  min_lr: 3e-04
+Started at: 2025-06-01 01:04:28
+Completed in 49.1 minutes
+Exit code: 0
+Best validation loss: 8.9228
+Final training loss: 8.9421
+
+================================================================================
+EXPERIMENT 75
+================================================================================
+Parameters:
+  method: dikronzo
+  learning_rate: 0.003
+  zo_eps: 0.002
+  use_momentum: False
+  min_lr: 3e-04
+Started at: 2025-06-01 01:53:37
+Completed in 49.7 minutes
+Exit code: 0
+Best validation loss: 8.9251
+Final training loss: 8.9348
+
+================================================================================
+EXPERIMENT 76
+================================================================================
+Parameters:
+  method: dikronzo
+  learning_rate: 0.003
+  zo_eps: 0.005
+  use_momentum: False
+  min_lr: 3e-04
+Started at: 2025-06-01 02:43:19
+Completed in 49.2 minutes
+Exit code: 0
+Best validation loss: 8.9181
+Final training loss: 8.9345
+
+================================================================================
+EXPERIMENT 77
+================================================================================
+Parameters:
+  method: dikronzo
+  learning_rate: 0.006
+  zo_eps: 0.0005
+  use_momentum: False
+  min_lr: 6e-04
+Started at: 2025-06-01 03:32:30
+Completed in 48.9 minutes
+Exit code: 0
+Best validation loss: 10.8258
+Final training loss: 10.8258
+
+================================================================================
+EXPERIMENT 78
+================================================================================
+Parameters:
+  method: dikronzo
+  learning_rate: 0.006
+  zo_eps: 0.001
+  use_momentum: False
+  min_lr: 6e-04
+Started at: 2025-06-01 04:21:23
+Completed in 6.3 minutes
+Exit code: 1
+Best validation loss: 10.8840
+Final training loss: 10.8846
+
+================================================================================
+EXPERIMENT 79
+================================================================================
+Parameters:
+  method: dikronzo
+  learning_rate: 0.006
+  zo_eps: 0.002
+  use_momentum: False
+  min_lr: 6e-04
+Started at: 2025-06-01 04:27:41
+Completed in 49.2 minutes
+Exit code: 0
+Best validation loss: 10.8258
+Final training loss: 10.8258
+
+================================================================================
+EXPERIMENT 80
+================================================================================
+Parameters:
+  method: dikronzo
+  learning_rate: 0.006
+  zo_eps: 0.005
+  use_momentum: False
+  min_lr: 6e-04
+Started at: 2025-06-01 05:16:55
+Completed in 49.2 minutes
+Exit code: 0
+Best validation loss: 9.2668
+Final training loss: 9.2638
+
+================================================================================
+EXPERIMENT 81
+================================================================================
+Parameters:
+  method: dikronzo
+  learning_rate: 0.0006
+  zo_eps: 0.0005
+  use_momentum: True
+  min_lr: 6e-05
+Started at: 2025-06-01 06:06:10
+Completed in 48.8 minutes
+Exit code: 0
+Best validation loss: 9.1470
+Final training loss: 9.1449
+
+================================================================================
+EXPERIMENT 82
+================================================================================
+Parameters:
+  method: dikronzo
+  learning_rate: 0.0006
+  zo_eps: 0.001
+  use_momentum: True
+  min_lr: 6e-05
+Started at: 2025-06-01 06:55:03
+Completed in 49.0 minutes
+Exit code: 0
+Best validation loss: 9.1594
+Final training loss: 9.1572
+
+================================================================================
+EXPERIMENT 83
+================================================================================
+Parameters:
+  method: dikronzo
+  learning_rate: 0.0006
+  zo_eps: 0.002
+  use_momentum: True
+  min_lr: 6e-05
+Started at: 2025-06-01 07:44:08
+Completed in 49.1 minutes
+Exit code: 0
+Best validation loss: 9.1573
+Final training loss: 9.1667
+
+================================================================================
+EXPERIMENT 84
+================================================================================
+Parameters:
+  method: dikronzo
+  learning_rate: 0.0006
+  zo_eps: 0.005
+  use_momentum: True
+  min_lr: 6e-05
+Started at: 2025-06-01 08:33:18
+Completed in 49.3 minutes
+Exit code: 0
+Best validation loss: 9.1283
+Final training loss: 9.1367
+
+================================================================================
+EXPERIMENT 85
+================================================================================
+Parameters:
+  method: dikronzo
+  learning_rate: 0.001
+  zo_eps: 0.0005
+  use_momentum: True
+  min_lr: 1e-04
+Started at: 2025-06-01 09:22:36
+Completed in 49.0 minutes
+Exit code: 0
+Best validation loss: 9.0748
+Final training loss: 9.0837
+
+================================================================================
+EXPERIMENT 86
+================================================================================
+Parameters:
+  method: dikronzo
+  learning_rate: 0.001
+  zo_eps: 0.001
+  use_momentum: True
+  min_lr: 1e-04
+Started at: 2025-06-01 10:11:36
+Completed in 49.3 minutes
+Exit code: 0
+Best validation loss: 9.0506
+Final training loss: 9.0129
+
+================================================================================
+EXPERIMENT 87
+================================================================================
+Parameters:
+  method: dikronzo
+  learning_rate: 0.001
+  zo_eps: 0.002
+  use_momentum: True
+  min_lr: 1e-04
+Started at: 2025-06-01 11:00:53
+Completed in 49.2 minutes
+Exit code: 0
+Best validation loss: 9.0758
+Final training loss: 9.0721
+
+================================================================================
+EXPERIMENT 88
+================================================================================
+Parameters:
+  method: dikronzo
+  learning_rate: 0.001
+  zo_eps: 0.005
+  use_momentum: True
+  min_lr: 1e-04
+Started at: 2025-06-01 11:50:09
+Completed in 49.7 minutes
+Exit code: 0
+Best validation loss: 9.0361
+Final training loss: 9.0398
+
+================================================================================
+EXPERIMENT 89
+================================================================================
+Parameters:
+  method: dikronzo
+  learning_rate: 0.003
+  zo_eps: 0.0005
+  use_momentum: True
+  min_lr: 3e-04
+Started at: 2025-06-01 12:39:54
+Completed in 49.3 minutes
+Exit code: 0
+Best validation loss: 9.0946
+Final training loss: 9.0961
+
+================================================================================
+EXPERIMENT 90
+================================================================================
+Parameters:
+  method: dikronzo
+  learning_rate: 0.003
+  zo_eps: 0.001
+  use_momentum: True
+  min_lr: 3e-04
+Started at: 2025-06-01 13:29:16
+Completed in 49.5 minutes
+Exit code: 0
+Best validation loss: 9.0611
+Final training loss: 9.0805
+
+================================================================================
+EXPERIMENT 91
+================================================================================
+Parameters:
+  method: dikronzo
+  learning_rate: 0.003
+  zo_eps: 0.002
+  use_momentum: True
+  min_lr: 3e-04
+Started at: 2025-06-01 14:18:53
+Completed in 49.0 minutes
+Exit code: 0
+Best validation loss: 9.0911
+Final training loss: 9.0868
+
+================================================================================
+EXPERIMENT 92
+================================================================================
+Parameters:
+  method: dikronzo
+  learning_rate: 0.003
+  zo_eps: 0.005
+  use_momentum: True
+  min_lr: 3e-04
+Started at: 2025-06-01 15:07:54
+Completed in 49.4 minutes
+Exit code: 0
+Best validation loss: 8.9715
+Final training loss: 8.9644
+
+================================================================================
+EXPERIMENT 93
+================================================================================
+Parameters:
+  method: dikronzo
+  learning_rate: 0.006
+  zo_eps: 0.0005
+  use_momentum: True
+  min_lr: 6e-04
+Started at: 2025-06-01 15:57:23
+Completed in 49.4 minutes
+Exit code: 0
+Best validation loss: 10.8258
+Final training loss: 10.8258
+
+================================================================================
+EXPERIMENT 94
+================================================================================
+Parameters:
+  method: dikronzo
+  learning_rate: 0.006
+  zo_eps: 0.001
+  use_momentum: True
+  min_lr: 6e-04
+Started at: 2025-06-01 16:46:46
+Completed in 48.9 minutes
+Exit code: 0
+Best validation loss: 10.8258
+Final training loss: 10.8258
+
+================================================================================
+EXPERIMENT 95
+================================================================================
+Parameters:
+  method: dikronzo
+  learning_rate: 0.006
+  zo_eps: 0.002
+  use_momentum: True
+  min_lr: 6e-04
+Started at: 2025-06-01 17:35:41
+Completed in 49.5 minutes
+Exit code: 0
+Best validation loss: 10.8258
+Final training loss: 10.8258
+
+================================================================================
+EXPERIMENT 96
+================================================================================
+Parameters:
+  method: dikronzo
+  learning_rate: 0.006
+  zo_eps: 0.005
+  use_momentum: True
+  min_lr: 6e-04
+Started at: 2025-06-01 18:25:16
+Completed in 48.7 minutes
+Exit code: 0
+Best validation loss: 9.1828
+Final training loss: 9.1906
+
+================================================================================
+FINAL SUMMARY
+================================================================================
+Directional ZO Methods Overnight Test Results
+============================================================================================================================================
+Exp  Method   LR       zo_eps   Momentum Best_Val  Final_Train It/s   Mem(GB)  Steps  Time(min)
+--------------------------------------------------------------------------------------------------------------------------------------------
+22   dilozo   1e-03    1e-03    Yes      8.8907    8.8894      0.77   0.4      3001   7.2      
+76   dikronzo 3e-03    5e-03    No       8.9181    8.9345      0.93   0.1      3001   49.2     
+72   dikronzo 1e-03    5e-03    No       8.9195    8.9364      0.92   0.1      3001   48.9     
+21   dilozo   1e-03    5e-04    Yes      8.9220    8.9024      0.75   0.4      3001   7.2      
+74   dikronzo 3e-03    1e-03    No       8.9228    8.9421      0.96   0.1      3001   49.1     
+75   dikronzo 3e-03    2e-03    No       8.9251    8.9348      0.94   0.1      3001   49.7     
+17   dilozo   6e-04    5e-04    Yes      8.9261    8.9288      0.78   0.4      3001   7.3      
+35   dimezo   6e-04    2e-03    No       8.9310    8.9325      0.61   0.3      3001   6.1      
+19   dilozo   6e-04    2e-03    Yes      8.9360    8.9414      0.76   0.4      3001   7.2      
+71   dikronzo 1e-03    2e-03    No       8.9564    8.9659      0.95   0.1      3001   48.6     
+52   dimezo   6e-04    5e-03    Yes      8.9571    8.9410      0.70   0.4      3001   6.3      
+69   dikronzo 1e-03    5e-04    No       8.9611    8.9683      0.95   0.1      3001   48.6     
+23   dilozo   1e-03    2e-03    Yes      8.9622    8.9988      0.78   0.4      3001   7.2      
+92   dikronzo 3e-03    5e-03    Yes      8.9715    8.9644      0.92   0.1      3001   49.4     
+36   dimezo   6e-04    5e-03    No       8.9723    8.9652      0.63   0.3      3001   6.2      
+18   dilozo   6e-04    1e-03    Yes      8.9737    8.9710      0.81   0.4      3001   7.1      
+56   dimezo   1e-03    5e-03    Yes      8.9921    8.9931      0.43   0.4      3001   6.1      
+50   dimezo   6e-04    1e-03    Yes      8.9925    8.9672      0.58   0.4      3001   6.1      
+51   dimezo   6e-04    2e-03    Yes      8.9961    8.9931      0.66   0.4      3001   6.2      
+70   dikronzo 1e-03    1e-03    No       9.0061    8.9965      0.95   0.1      3001   48.8     
+3    dilozo   6e-04    2e-03    No       9.0099    8.9924      0.44   0.3      3001   6.9      
+40   dimezo   1e-03    5e-03    No       9.0105    8.9875      0.56   0.3      3001   6.3      
+67   dikronzo 6e-04    2e-03    No       9.0131    9.0163      0.93   0.1      3001   48.5     
+33   dimezo   6e-04    5e-04    No       9.0198    9.0000      0.70   0.3      3001   6.3      
+55   dimezo   1e-03    2e-03    Yes      9.0215    9.0243      0.58   0.4      3001   6.1      
+49   dimezo   6e-04    5e-04    Yes      9.0217    9.0136      0.54   0.4      3001   6.1      
+66   dikronzo 6e-04    1e-03    No       9.0259    9.0303      0.94   0.1      3001   48.9     
+39   dimezo   1e-03    2e-03    No       9.0335    9.0383      0.42   0.3      3001   6.1      
+34   dimezo   6e-04    1e-03    No       9.0346    8.9933      0.63   0.3      3001   6.3      
+88   dikronzo 1e-03    5e-03    Yes      9.0361    9.0398      0.95   0.1      3001   49.7     
+86   dikronzo 1e-03    1e-03    Yes      9.0506    9.0129      0.93   0.1      3001   49.3     
+4    dilozo   6e-04    5e-03    No       9.0514    9.0295      0.63   0.3      3001   7.3      
+65   dikronzo 6e-04    5e-04    No       9.0522    9.0533      0.96   0.1      3001   48.6     
+68   dikronzo 6e-04    5e-03    No       9.0522    9.0463      0.94   0.1      3001   48.6     
+37   dimezo   1e-03    5e-04    No       9.0563    9.0563      0.58   0.3      3001   6.0      
+90   dikronzo 3e-03    1e-03    Yes      9.0611    9.0805      0.95   0.1      3001   49.5     
+85   dikronzo 1e-03    5e-04    Yes      9.0748    9.0837      0.95   0.1      3001   49.0     
+87   dikronzo 1e-03    2e-03    Yes      9.0758    9.0721      0.95   0.1      3001   49.2     
+54   dimezo   1e-03    1e-03    Yes      9.0812    9.0618      0.44   0.4      3001   6.1      
+38   dimezo   1e-03    1e-03    No       9.0834    9.0912      0.44   0.3      3001   6.0      
+91   dikronzo 3e-03    2e-03    Yes      9.0911    9.0868      0.94   0.1      3001   49.0     
+89   dikronzo 3e-03    5e-04    Yes      9.0946    9.0961      0.92   0.1      3001   49.3     
+53   dimezo   1e-03    5e-04    Yes      9.1174    9.1091      0.67   0.4      3001   6.2      
+84   dikronzo 6e-04    5e-03    Yes      9.1283    9.1367      0.95   0.1      3001   49.3     
+81   dikronzo 6e-04    5e-04    Yes      9.1470    9.1449      0.95   0.1      3001   48.8     
+24   dilozo   1e-03    5e-03    Yes      9.1499    9.1341      0.68   0.4      3001   7.4      
+73   dikronzo 3e-03    5e-04    No       9.1535    9.1411      0.95   0.1      3001   48.9     
+83   dikronzo 6e-04    2e-03    Yes      9.1573    9.1667      0.93   0.1      3001   49.1     
+82   dikronzo 6e-04    1e-03    Yes      9.1594    9.1572      0.95   0.1      3001   49.0     
+20   dilozo   6e-04    5e-03    Yes      9.1661    9.1736      0.79   0.4      3001   7.1      
+96   dikronzo 6e-03    5e-03    Yes      9.1828    9.1906      0.95   0.1      3001   48.7     
+80   dikronzo 6e-03    5e-03    No       9.2668    9.2638      0.95   0.1      3001   49.2     
+2    dilozo   6e-04    1e-03    No       9.2691    9.2784      0.44   0.3      3001   6.8      
+60   dimezo   3e-03    5e-03    Yes      10.6271   10.6332     0.85   0.4      3001   6.3      
+1    dilozo   6e-04    5e-04    No       10.8258   10.8258     0.42   0.3      3001   6.7      
+5    dilozo   1e-03    5e-04    No       10.8258   10.8258     0.53   0.3      3001   6.9      
+6    dilozo   1e-03    1e-03    No       10.8258   10.8258     0.53   0.3      3001   6.8      
+7    dilozo   1e-03    2e-03    No       10.8258   10.8258     0.48   0.3      3001   6.8      
+9    dilozo   3e-03    5e-04    No       10.8258   10.8258     0.41   0.3      3001   6.7      
+10   dilozo   3e-03    1e-03    No       10.8258   10.8258     0.64   0.3      3001   6.8      
+11   dilozo   3e-03    2e-03    No       10.8258   10.8258     0.61   0.3      3001   6.7      
+12   dilozo   3e-03    5e-03    No       10.8258   10.8258     0.60   0.3      3001   6.8      
+15   dilozo   6e-03    2e-03    No       10.8258   10.8258     0.73   0.3      3001   6.8      
+16   dilozo   6e-03    5e-03    No       10.8258   10.8258     0.55   0.3      3001   6.9      
+25   dilozo   3e-03    5e-04    Yes      10.8258   10.8258     0.77   0.4      3001   7.0      
+26   dilozo   3e-03    1e-03    Yes      10.8258   10.8258     0.85   0.4      3001   7.0      
+27   dilozo   3e-03    2e-03    Yes      10.8258   10.8258     0.76   0.4      3001   7.1      
+28   dilozo   3e-03    5e-03    Yes      10.8258   10.8258     0.80   0.4      3001   7.0      
+30   dilozo   6e-03    1e-03    Yes      10.8258   10.8258     0.79   0.4      3001   7.0      
+31   dilozo   6e-03    2e-03    Yes      10.8258   10.8258     0.83   0.4      3001   6.9      
+32   dilozo   6e-03    5e-03    Yes      10.8258   10.8258     0.77   0.4      3001   7.0      
+41   dimezo   3e-03    5e-04    No       10.8258   10.8258     0.64   0.3      3001   6.0      
+42   dimezo   3e-03    1e-03    No       10.8258   10.8258     0.43   0.3      3001   5.9      
+43   dimezo   3e-03    2e-03    No       10.8258   10.8258     0.44   0.3      3001   5.9      
+45   dimezo   6e-03    5e-04    No       10.8258   10.8258     0.66   0.3      3001   5.9      
+46   dimezo   6e-03    1e-03    No       10.8258   10.8258     0.59   0.3      3001   5.9      
+47   dimezo   6e-03    2e-03    No       10.8258   10.8258     0.55   0.3      3001   5.8      
+48   dimezo   6e-03    5e-03    No       10.8258   10.8258     0.45   0.3      3001   5.8      
+57   dimezo   3e-03    5e-04    Yes      10.8258   10.8258     0.62   0.4      3001   5.9      
+58   dimezo   3e-03    1e-03    Yes      10.8258   10.8258     0.44   0.4      3001   5.9      
+59   dimezo   3e-03    2e-03    Yes      10.8258   10.8258     0.44   0.4      3001   5.9      
+62   dimezo   6e-03    1e-03    Yes      10.8258   10.8258     0.65   0.4      3001   6.2      
+63   dimezo   6e-03    2e-03    Yes      10.8258   10.8258     0.62   0.4      3001   5.9      
+64   dimezo   6e-03    5e-03    Yes      10.8258   10.8258     0.45   0.4      3001   5.9      
+77   dikronzo 6e-03    5e-04    No       10.8258   10.8258     0.95   0.1      3001   48.9     
+79   dikronzo 6e-03    2e-03    No       10.8258   10.8258     0.92   0.1      3001   49.2     
+93   dikronzo 6e-03    5e-04    Yes      10.8258   10.8258     0.91   0.1      3001   49.4     
+94   dikronzo 6e-03    1e-03    Yes      10.8258   10.8258     0.95   0.1      3001   48.9     
+95   dikronzo 6e-03    2e-03    Yes      10.8258   10.8258     0.93   0.1      3001   49.5     
+44   dimezo   3e-03    5e-03    No       10.8840   11.0378     0.51   0.3      3001   6.1      
+61   dimezo   6e-03    5e-04    Yes      10.8840   10.8846     0.45   0.4      3001   5.8      
+--------------------------------------------------------------------------------------------------------------------------------------------
+Total successful runs: 91 / 96
+
+Analysis:
+--------------------------------------------------
+Best validation loss: 8.8907
+Best configuration:
+  method: dilozo
+  learning_rate: 0.001
+  zo_eps: 0.001
+
+Method-wise Best Performance:
+  dilozo (with momentum): 8.8907 (lr=1e-03, eps=1e-03)
+  dimezo (without momentum): 8.9310 (lr=6e-04, eps=2e-03)
+  dikronzo (without momentum): 8.9181 (lr=3e-03, eps=5e-03)
+
+Fastest training: 0.96 it/s (dikronzo - Exp 74)
+Lowest memory usage: 0.1 GB (dikronzo - Exp 76)
+
+Momentum Analysis:
+  dilozo: 9.0099 vs dilozo-M: 8.8907 (improvement: 1.32%)
+  dimezo: 8.9310 vs dimezo-M: 8.9571 (improvement: -0.29%)
+  dikronzo: 8.9181 vs dikronzo-M: 8.9715 (improvement: -0.60%)
+
+All results saved to: directional_zo_experiment_20250531_111227/
+Summary: directional_zo_experiment_20250531_111227/summary.txt
+Detailed results: directional_zo_experiment_20250531_111227/results/all_results.json
+Completed at: 2025-06-01 19:14:02

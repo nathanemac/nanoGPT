@@ -36,7 +36,7 @@ wandb_run_name = 'lozo-run'     # Wandb run name
 # DATA CONFIGURATION
 # =============================================================================
 gradient_accumulation_steps = 1  # Simulate larger batch sizes (must be divisible by number of GPUs)
-batch_size = 64                  # Micro-batch size per GPU
+batch_size = 32                  # Micro-batch size per GPU
 block_size = 256                 # Context length (sequence length)
 
 # =============================================================================
@@ -47,7 +47,7 @@ n_layer = 6      # Number of transformer layers
 n_head = 6       # Number of attention heads
 n_embd = 384     # Embedding dimension
 
-# Medium model (uncomment for larger experiments)
+# Medium model 125M (uncomment for larger experiments)
 # n_layer = 12
 # n_head = 12
 # n_embd = 768
@@ -64,7 +64,7 @@ bias = False     # Use bias in LayerNorm and Linear layers
 # OPTIMIZER SETTINGS
 # =============================================================================
 learning_rate = 1e-3  # Maximum learning rate
-max_iters = 50      # Total number of training iterations
+max_iters = 5000      # Total number of training iterations
 weight_decay = 1e-1   # L2 regularization strength
 
 # Standard optimizer parameters (used as fallback)
@@ -100,7 +100,7 @@ rank_adaptive = False        # Enable adaptive rank scheduling
 min_rank = 2                 # Minimum rank for adaptive scheduling
                              # OPTIONS: 1 (start small), 2-4 (conservative start)
 
-max_rank = 16                # Maximum rank for adaptive scheduling
+max_rank = 32                # Maximum rank for adaptive scheduling
                              # OPTIONS: 8-16 (medium), 32-64 (large)
 
 rank_strategy = 'linear'     # Rank scheduling strategy
@@ -119,7 +119,7 @@ momentum_beta = 0.9  # Momentum coefficient
 # =============================================================================
 # DIRECTIONAL SELECTION PARAMETERS (for DiLoZO)
 # =============================================================================
-directional_q = 50           # Number of directions to try in DiLoZO
+directional_q = 10           # Number of directions to try in DiLoZO
                              # OPTIONS: 5 (fast), 10 (default), 20 (thorough)
 
 # =============================================================================

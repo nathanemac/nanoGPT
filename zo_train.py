@@ -22,11 +22,11 @@ from lozo_utils import (
 )
 from mezo_utils import (
     mezo_perturb_parameters, mezo_step, mezo_update, mezo_update_momentum,
-    dimezo_perturb_parameters, dimezo_step, dimezo_update
+    dimezo_perturb_parameters, dimezo_step, dimezo_update, dimezo_update_momentum
 )
 from kronzo_utils import (
     kronzo_perturb_parameters, kronzo_step, kronzo_update, kronzo_update_momentum,
-    dikronzo_perturb_parameters, dikronzo_step, dikronzo_update
+    dikronzo_perturb_parameters, dikronzo_step, dikronzo_update, dikronzo_update_momentum
 )
 from first_order_utils import first_order_update
 
@@ -84,6 +84,7 @@ directional_q = 10
 dimezo_direct_movement = False
 kron_max_factor = 32
 kron_strategy = 'approx_square'
+kronzo_sampling_number = 1  # Number of Kronecker products to sample and sum
 dikronzo_direct_movement = False
 use_adaptive_eps = False
 adaptive_eps_window = 20
@@ -295,12 +296,15 @@ if not init_from == 'resume':
     step = 0
     exp_avg_m = {}
     v_old_dict = {}
+    b_dict = {}  # B matrix storage for KronZO methods
 elif 'exp_avg_m' in checkpoint and (train_method in ['lozom', 'mezom', 'dilozo', 'kronzo', 'dikronzo'] and use_momentum):
     exp_avg_m = checkpoint['exp_avg_m']
     v_old_dict = checkpoint.get('v_old_dict', {})
+    b_dict = checkpoint.get('b_dict', {})  # Load B matrices for KronZO methods
 else:
     exp_avg_m = {}
     v_old_dict = {}
+    b_dict = {}  # Initialize B matrix storage
 
 if use_adaptive_eps:
     adaptive_eps_manager = AdaptiveZoEps(
@@ -440,6 +444,8 @@ while True:
                     checkpoint_data['exp_avg_m'] = exp_avg_m
                     if train_method == 'lozom':
                         checkpoint_data['v_old_dict'] = v_old_dict
+                if train_method in ['kronzo', 'dikronzo']:
+                    checkpoint_data['b_dict'] = b_dict  # Save B matrices for KronZO methods
                 print(f"saving checkpoint to {out_dir}")
                 torch.save(checkpoint_data, os.path.join(out_dir, 'ckpt.pt')) # Use a different name for the dict
     if iter_num == 0 and eval_only:
@@ -616,9 +622,15 @@ while True:
                 accumulated_projected_grad += grad_or_direction / gradient_accumulation_steps
         loss = accumulated_loss  # Use properly accumulated loss
         if dimezo_direct_movement:
-            dimezo_update(raw_model, optimizer, best_direction_for_update_dict, best_direction_seed_for_update, step, lr, weight_decay, master_process, direct_movement=True)
+            if use_momentum:
+                dimezo_update_momentum(raw_model, optimizer, best_direction_for_update_dict, best_direction_seed_for_update, exp_avg_m, step, lr, weight_decay, master_process, beta1=momentum_beta, direct_movement=True)
+            else:
+                dimezo_update(raw_model, optimizer, best_direction_for_update_dict, best_direction_seed_for_update, step, lr, weight_decay, master_process, direct_movement=True)
         else:
-            dimezo_update(raw_model, optimizer, accumulated_projected_grad, best_direction_seed_for_update, step, lr, weight_decay, master_process, direct_movement=False)
+            if use_momentum:
+                dimezo_update_momentum(raw_model, optimizer, accumulated_projected_grad, best_direction_seed_for_update, exp_avg_m, step, lr, weight_decay, master_process, beta1=momentum_beta, direct_movement=False)
+            else:
+                dimezo_update(raw_model, optimizer, accumulated_projected_grad, best_direction_seed_for_update, step, lr, weight_decay, master_process, direct_movement=False)
         if use_adaptive_eps and adaptive_eps_manager is not None:
             proj_grad_for_adaptive = accumulated_projected_grad if not dimezo_direct_movement else 0.0 
             current_lr_for_eps_record = get_lr(iter_num) if decay_lr else learning_rate
@@ -692,7 +704,8 @@ while True:
                 zo_eps_global=effective_zo_eps_to_use, 
                 ctx_obj=ctx,
                 strategy=kron_strategy, max_factor=kron_max_factor,
-                eps=effective_zo_eps_to_use
+                eps=effective_zo_eps_to_use, kronzo_sampling_number=kronzo_sampling_number,
+                b_dict=b_dict, step_interval=step_interval
             )
             if micro_step == 0:
                 named_params_for_update = current_named_params
@@ -710,12 +723,16 @@ while True:
                                    exp_avg_m, step, lr, weight_decay, master_process,
                                    beta1=momentum_beta,
                                    named_parameters_to_optim=named_params_for_update, 
-                                   strategy=kron_strategy, max_factor=kron_max_factor)
+                                   strategy=kron_strategy, max_factor=kron_max_factor,
+                                   kronzo_sampling_number=kronzo_sampling_number,
+                                   b_dict=b_dict, step_interval=step_interval)
         else:
             kronzo_update(raw_model, optimizer, accumulated_projected_grad, first_zo_seed, step, lr, 
                           weight_decay, master_process,
                           named_parameters_to_optim=named_params_for_update,
-                          strategy=kron_strategy, max_factor=kron_max_factor)
+                          strategy=kron_strategy, max_factor=kron_max_factor,
+                          kronzo_sampling_number=kronzo_sampling_number,
+                          b_dict=b_dict, step_interval=step_interval)
         # Add adaptive epsilon support for KronZO
         if use_adaptive_eps and adaptive_eps_manager is not None:
             current_lr_for_eps_record = get_lr(iter_num) if decay_lr else learning_rate
@@ -744,7 +761,10 @@ while True:
                 eps                = effective_zo_eps_to_use, 
                 strategy           = kron_strategy,
                 max_factor         = kron_max_factor,
-                direct_movement    = dikronzo_direct_movement
+                direct_movement    = dikronzo_direct_movement,
+                kronzo_sampling_number = kronzo_sampling_number,
+                b_dict             = b_dict,
+                step_interval      = step_interval
             )
             # Get next batch for next iteration (but not after the last micro-step)
             if micro_step < gradient_accumulation_steps - 1:
@@ -762,31 +782,75 @@ while True:
                  accumulated_grad_val += grad_or_coeff_val / gradient_accumulation_steps
         loss = accumulated_loss  # Use properly accumulated loss
         if dikronzo_direct_movement:
-            dikronzo_update(
-                raw_model, optimizer,
-                grad_or_seed       = None, 
-                best_seed          = best_direction_seed_for_update,
-                step               = step,
-                lr                 = lr,
-                weight_decay       = weight_decay,
-                master_process     = master_process,
-                direct_movement    = True,
-                strategy           = kron_strategy,
-                max_factor         = kron_max_factor
-            )
+            if use_momentum:
+                dikronzo_update_momentum(
+                    raw_model, optimizer,
+                    grad_or_seed       = None, 
+                    best_seed          = best_direction_seed_for_update,
+                    exp_avg_m          = exp_avg_m,
+                    step               = step,
+                    lr                 = lr,
+                    weight_decay       = weight_decay,
+                    master_process     = master_process,
+                    beta1              = momentum_beta,
+                    direct_movement    = True,
+                    strategy           = kron_strategy,
+                    max_factor         = kron_max_factor,
+                    kronzo_sampling_number = kronzo_sampling_number,
+                    b_dict             = b_dict,
+                    step_interval      = step_interval
+                )
+            else:
+                dikronzo_update(
+                    raw_model, optimizer,
+                    grad_or_seed       = None, 
+                    best_seed          = best_direction_seed_for_update,
+                    step               = step,
+                    lr                 = lr,
+                    weight_decay       = weight_decay,
+                    master_process     = master_process,
+                    direct_movement    = True,
+                    strategy           = kron_strategy,
+                    max_factor         = kron_max_factor,
+                    kronzo_sampling_number = kronzo_sampling_number,
+                    b_dict             = b_dict,
+                    step_interval      = step_interval
+                )
         else:
-            dikronzo_update(
-                raw_model, optimizer,
-                grad_or_seed       = accumulated_grad_val, 
-                best_seed          = best_direction_seed_for_update,
-                step               = step,
-                lr                 = lr,
-                weight_decay       = weight_decay,
-                master_process     = master_process,
-                direct_movement    = False,
-                strategy           = kron_strategy,
-                max_factor         = kron_max_factor
-            )
+            if use_momentum:
+                dikronzo_update_momentum(
+                    raw_model, optimizer,
+                    grad_or_seed       = accumulated_grad_val, 
+                    best_seed          = best_direction_seed_for_update,
+                    exp_avg_m          = exp_avg_m,
+                    step               = step,
+                    lr                 = lr,
+                    weight_decay       = weight_decay,
+                    master_process     = master_process,
+                    beta1              = momentum_beta,
+                    direct_movement    = False,
+                    strategy           = kron_strategy,
+                    max_factor         = kron_max_factor,
+                    kronzo_sampling_number = kronzo_sampling_number,
+                    b_dict             = b_dict,
+                    step_interval      = step_interval
+                )
+            else:
+                dikronzo_update(
+                    raw_model, optimizer,
+                    grad_or_seed       = accumulated_grad_val, 
+                    best_seed          = best_direction_seed_for_update,
+                    step               = step,
+                    lr                 = lr,
+                    weight_decay       = weight_decay,
+                    master_process     = master_process,
+                    direct_movement    = False,
+                    strategy           = kron_strategy,
+                    max_factor         = kron_max_factor,
+                    kronzo_sampling_number = kronzo_sampling_number,
+                    b_dict             = b_dict,
+                    step_interval      = step_interval
+                )
         if use_adaptive_eps and adaptive_eps_manager is not None:
             proj_grad_for_adaptive = accumulated_grad_val if not dikronzo_direct_movement else 0.0
             current_lr_for_eps_record = get_lr(iter_num) if decay_lr else learning_rate

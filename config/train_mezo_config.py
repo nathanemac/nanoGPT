@@ -14,7 +14,7 @@ train_method = 'dimezo'  # OPTIONS: 'mezo', 'mezom', 'dimezo'
 # =============================================================================
 # DATASET AND MODEL SELECTION
 # =============================================================================
-dataset = 'shakespeare'  # OPTIONS: 'shakespeare', 'openwebtext', 'gpt2'
+dataset = 'openwebtext'  # OPTIONS: 'shakespeare', 'openwebtext', 'gpt2'
 init_from = 'scratch'    # OPTIONS: 'scratch', 'resume', 'gpt2', 'gpt2-medium', 'gpt2-large', 'gpt2-xl'
 
 # =============================================================================
@@ -36,35 +36,35 @@ wandb_run_name = 'mezo-run'     # Wandb run name
 # DATA CONFIGURATION
 # =============================================================================
 gradient_accumulation_steps = 1  # Simulate larger batch sizes (must be divisible by number of GPUs)
-batch_size = 64                  # Micro-batch size per GPU
-block_size = 256                 # Context length (sequence length)
+batch_size = 32                  # Micro-batch size per GPU
+block_size = 1024                 # Context length (sequence length)
 
 # =============================================================================
 # MODEL ARCHITECTURE
 # =============================================================================
 # Small model (for shakespeare/testing)
-n_layer = 6      # Number of transformer layers
-n_head = 6       # Number of attention heads
-n_embd = 384     # Embedding dimension
+# n_layer = 6      # Number of transformer layers
+# n_head = 6       # Number of attention heads
+# n_embd = 384     # Embedding dimension
 
 # Medium model (uncomment for larger experiments)
-# n_layer = 12
-# n_head = 12
-# n_embd = 768
+n_layer = 12
+n_head = 12
+n_embd = 768
 
 # Large model (uncomment for full-scale experiments)
 # n_layer = 24
 # n_head = 16
 # n_embd = 1024
 
-dropout = 0.1    # Dropout rate (0.0 for pretraining, 0.1+ for finetuning)
+dropout = 0.0    # Dropout rate (0.0 for pretraining, 0.1+ for finetuning)
 bias = False     # Use bias in LayerNorm and Linear layers
 
 # =============================================================================
 # OPTIMIZER SETTINGS
 # =============================================================================
-learning_rate = 1e-3  # Maximum learning rate
-max_iters = 200      # Total number of training iterations
+learning_rate = 3e-4  # Maximum learning rate
+max_iters = 50000      # Total number of training iterations
 weight_decay = 1e-1   # L2 regularization strength
 
 # Standard optimizer parameters (used as fallback)
@@ -75,7 +75,7 @@ grad_clip = 1.0      # Clip gradients at this value (0.0 to disable)
 # =============================================================================
 # ZERO-ORDER OPTIMIZATION PARAMETERS
 # =============================================================================
-zo_eps = 1e-3        # Perturbation size for gradient estimation
+zo_eps = 5e-4        # Perturbation size for gradient estimation
                      # OPTIONS: 1e-4 (small), 1e-3 (default), 1e-2 (large)
 
 zo_q = 1             # Number of gradient estimates to average (for MeZO/SVD-LoZO)
@@ -93,7 +93,7 @@ momentum_beta = 0.9  # Momentum coefficient
 # =============================================================================
 # DIRECTIONAL SELECTION PARAMETERS (for DiMeZO)
 # =============================================================================
-directional_q = 20           # Number of directions to try in DiMeZO
+directional_q = 100           # Number of directions to try in DiMeZO
                              # OPTIONS: 5 (fast), 10 (default), 20 (thorough)
 
 dimezo_direct_movement = False  # Movement strategy for DiMeZO
@@ -148,8 +148,8 @@ kron_max_factor = 32             # Maximum factor size for Kronecker factorizati
 # =============================================================================
 decay_lr = True      # Whether to decay learning rate
 warmup_iters = 500   # Number of warmup iterations
-lr_decay_iters = 5000  # Should be ~= max_iters for cosine decay
-min_lr = 1e-4        # Minimum learning rate (should be ~= learning_rate/10)
+lr_decay_iters = 50000  # Should be ~= max_iters for cosine decay
+min_lr = 3e-5        # Minimum learning rate (should be ~= learning_rate/10)
 
 # =============================================================================
 # SYSTEM SETTINGS
