@@ -1,7 +1,7 @@
 # =============================================================================
 # COMPREHENSIVE CONFIG FOR KRONZO-BASED OPTIMIZATION METHODS
 # =============================================================================
-# This config file contains all parameters for KronZO and DiKronZO training.
+# This config file contains all parameters for KronZO, DiKronZO, and Improved Directional KronZO training.
 # Modify the parameters below to customize your training setup.
 
 import torch
@@ -9,65 +9,58 @@ import torch
 # =============================================================================
 # TRAINING METHOD SELECTION
 # =============================================================================
-train_method = 'dikronzo'  # OPTIONS: 'kronzo', 'dikronzo'
+train_method = 'improved_kronzo'  # OPTIONS: 'kronzo', 'dikronzo', 'improved_kronzo'
+                                  # 'kronzo': Standard KronZO with single direction
+                                  # 'dikronzo': Directional KronZO with best direction selection
+                                  # 'improved_kronzo': Advanced directional KronZO with conservative updates
 
 # =============================================================================
 # DATASET AND MODEL SELECTION
 # =============================================================================
-dataset = 'shakespeare'  # OPTIONS: 'shakespeare', 'openwebtext', 'gpt2'
+dataset = 'openwebtext'  # OPTIONS: 'shakespeare', 'openwebtext', 'gpt2'
 init_from = 'scratch'    # OPTIONS: 'scratch', 'resume', 'gpt2', 'gpt2-medium', 'gpt2-large', 'gpt2-xl'
 
 # =============================================================================
 # OUTPUT AND LOGGING SETTINGS
 # =============================================================================
-out_dir = 'out-kronzo'          # Output directory for checkpoints and logs
-eval_interval = 500            # How often to evaluate on validation set
-log_interval = 1                # How often to log training progress
-eval_iters = 50                 # Number of iterations for evaluation
-eval_only = False               # If True, only run evaluation and exit
-always_save_checkpoint = True   # If True, always save checkpoint after eval
+out_dir = 'out-improved-kronzo'   # Output directory for checkpoints and logs
+eval_interval = 500              # How often to evaluate on validation set
+log_interval = 1                 # How often to log training progress
+eval_iters = 50                  # Number of iterations for evaluation
+eval_only = False                # If True, only run evaluation and exit
+always_save_checkpoint = True    # If True, always save checkpoint after eval
 
 # Weights & Biases logging
-wandb_log = False               # Enable wandb logging
-wandb_project = 'nanogpt'       # Wandb project name
-wandb_run_name = 'kronzo-run'   # Wandb run name
+wandb_log = False                # Enable wandb logging
+wandb_project = 'nanogpt'        # Wandb project name
+wandb_run_name = 'improved-kronzo-run'  # Wandb run name
 
 # =============================================================================
 # DATA CONFIGURATION
 # =============================================================================
-gradient_accumulation_steps = 1  # Simulate larger batch sizes (must be divisible by number of GPUs)
-batch_size = 64                  # Micro-batch size per GPU
-block_size = 256                 # Context length (sequence length)
+gradient_accumulation_steps = 1  # Simulate larger batch sizes
+batch_size = 32                 # Micro-batch size per GPU
+block_size = 1024                # Context length (sequence length)
 
 # =============================================================================
 # MODEL ARCHITECTURE
 # =============================================================================
 # Small model (for shakespeare/testing)
-n_layer = 6      # Number of transformer layers
-n_head = 6       # Number of attention heads
-n_embd = 384     # Embedding dimension
+n_layer = 12      # Number of transformer layers
+n_head = 12       # Number of attention heads
+n_embd = 768     # Embedding dimension
 
-# Medium model 125M (uncomment for larger experiments)
-# n_layer = 12
-# n_head = 12
-# n_embd = 768
-
-# Large model (uncomment for full-scale experiments)
-# n_layer = 24
-# n_head = 16
-# n_embd = 1024
-
-dropout = 0.0    # Dropout rate (0.0 for pretraining, 0.1+ for finetuning)
+dropout = 0.0    # Dropout rate
 bias = False     # Use bias in LayerNorm and Linear layers
 
 # =============================================================================
 # OPTIMIZER SETTINGS
 # =============================================================================
-learning_rate = 1e-3  # Maximum learning rate
-max_iters = 2000      # Total number of training iterations
+learning_rate = 3e-4  # Increased for meaningful steps (was 1e-3)
+max_iters = 50000      # Total number of training iterations
 weight_decay = 1e-1   # L2 regularization strength
 
-# Standard optimizer parameters (used as fallback)
+# Standard optimizer parameters (kept for compatibility)
 beta1 = 0.9          # Adam beta1 (momentum coefficient)
 beta2 = 0.95         # Adam beta2 (RMSprop coefficient)
 grad_clip = 1.0      # Clip gradients at this value (0.0 to disable)
@@ -75,8 +68,7 @@ grad_clip = 1.0      # Clip gradients at this value (0.0 to disable)
 # =============================================================================
 # ZERO-ORDER OPTIMIZATION PARAMETERS
 # =============================================================================
-zo_eps = 1e-3        # Perturbation size for gradient estimation
-                     # OPTIONS: 1e-4 (small), 1e-3 (default), 1e-2 (large)
+zo_eps = 5e-4        # Perturbation size for gradient estimation (increased for better signal)
 
 # =============================================================================
 # KRONECKER PRODUCT PARAMETERS
@@ -85,102 +77,117 @@ kron_strategy = 'approx_square'  # Kronecker factorization strategy
                                  # OPTIONS: 'approx_square' (factors close to sqrt),
                                  #          'fixed_factor' (factors ≤ max_factor),
                                  #          'power2' (largest power-of-2 divisors)
-                                 # NOTE: For kronzo_sampling_number=1, this controls the factorization.
-                                 #       For kronzo_sampling_number>1, uses prime-factor overlapping strategy,
-                                 #       but 'fixed_factor' still applies max_factor constraints.
 
 kron_max_factor = 64             # Maximum factor size for 'fixed_factor' strategy
-                                 # OPTIONS: 16 (small), 32 (default), 64 (large)
-                                 # Also used as constraint in multi-sampling when kron_strategy='fixed_factor'
+                                # Also used as constraint in multi-sampling when kron_strategy='fixed_factor'
 
-kronzo_sampling_number = 2       # Number of Kronecker products to sample and sum
-                                 # OPTIONS: 1 (standard KronZO using kron_strategy), 
-                                 #          2-5 (multi-sampling with overlapping prime-factor strategy)
-                                 # When >1: Creates overlapping factorizations for better coverage
+kronzo_sampling_number = 1       # Number of Kronecker products to sample and sum
+                                # OPTIONS: 1 (standard KronZO using kron_strategy), 
+                                #          2-5 (multi-sampling with overlapping prime-factor strategy)
 
-step_interval = 20               # Interval for updating B matrices (every ν steps)
-                                 # OPTIONS: 20 (frequent updates), 50 (default), 100 (infrequent)
+step_interval = 50               # Interval for updating B matrices (every ν steps)
 
 # =============================================================================
-# MOMENTUM SETTINGS (for KronZO with momentum)
+# MOMENTUM SETTINGS
 # =============================================================================
-use_momentum = True # Enable momentum for KronZO
-                     # OPTIONS: True (KronZO-M), False (standard KronZO)
-momentum_beta = 0.9  # Momentum coefficient
-                     # OPTIONS: 0.9 (default), 0.95 (stronger momentum), 0.8 (weaker)
+use_momentum = True              # Enable momentum for improved KronZO
+momentum_beta = 0.9             # Momentum coefficient
 
 # =============================================================================
-# DIRECTIONAL SELECTION PARAMETERS (for DiKronZO)
+# DIRECTIONAL SELECTION PARAMETERS
 # =============================================================================
-directional_q = 10           # Number of directions to try in DiKronZO
-                             
+directional_q = 33                # Number of directions to evaluate
+                                # Standard KronZO: Not used (single direction)
+                                # DiKronZO: 5-15 directions typical
+                                # Improved KronZO: 20-50 directions for thorough evaluation
+                                # NOTE: Higher values = more expensive but potentially better updates
+                                # Cost: 3*directional_q function evaluations per step for improved_kronzo
+
+# CONSERVATIVE UPDATE PARAMETERS (for improved_kronzo)  
+loss_history_size = 10            # Number of previous successful losses to track
+                                # Only used by 'improved_kronzo' method
+                                # Controls conservative update acceptance:
+                                # - Accept update only if candidate loss ≤ max{previous successful losses}
+                                # - Smaller values = less conservative, faster adaptation
+                                # - Larger values = more conservative, slower but safer
+
+# =============================================================================
+# COMPATIBILITY PARAMETERS
+# =============================================================================
+# These parameters are needed for config compatibility but not used by improved KronZO
+zo_q = 1                        # Not used by directional methods
+dimezo_direct_movement = False   # Not used by KronZO
+dikronzo_direct_movement = False # Enable direct movement for DiKronZO (not used by improved_kronzo)
 
 # =============================================================================
 # ADAPTIVE ZO_EPS SETTINGS
 # =============================================================================
-use_adaptive_eps = False        # Enable adaptive perturbation size
-                                # OPTIONS: True (adaptive), False (fixed)
-
-adaptive_eps_window = 20        # Window size for tracking success rate
-                                # OPTIONS: 10 (responsive), 20 (default), 50 (stable)
-
-adaptive_eps_lr_coupling = 0.5  # Coupling strength between eps and learning rate
-                                 # OPTIONS: 0.0 (no coupling), 0.5 (default), 1.0 (full coupling)
-
-adaptive_eps_success_high = 0.7  # Success rate threshold for increasing eps
-                                 # OPTIONS: 0.6-0.8 (typical range)
-
-adaptive_eps_success_low = 0.3   # Success rate threshold for decreasing eps
-                                 # OPTIONS: 0.2-0.4 (typical range)
-
-# =============================================================================
-# ZERO-ORDER QUERY BUDGET PARAMETERS
-# =============================================================================
-zo_q = 1             # Number of gradient estimates to average (for averaging methods)
-                     # OPTIONS: 1 (standard), 2-5 (averaging multiple estimates)
-                     # NOTE: Not used by KronZO directional selection, but needed for compatibility
-
-# =============================================================================
-# DIMEZO SPECIFIC PARAMETERS (for compatibility)
-# =============================================================================
-dimezo_direct_movement = False  # Movement strategy for DiMeZO (not used by KronZO)
-                                # OPTIONS: True (direct movement), False (gradient estimation)
+use_adaptive_eps = False        # Disable for improved directional (can be added later)
+adaptive_eps_window = 20
+adaptive_eps_lr_coupling = 0.5
+adaptive_eps_success_high = 0.7
+adaptive_eps_success_low = 0.3
 
 # =============================================================================
 # LOZO-SPECIFIC PARAMETERS (for compatibility)
 # =============================================================================
 # These parameters are not used by KronZO methods but are needed for config compatibility
-rank_r = 4           # Fixed rank for U and V matrices (not used by KronZO)
-rank_adaptive = False        # Enable adaptive rank scheduling (not used by KronZO)
-min_rank = 1                 # Minimum rank for adaptive scheduling (not used by KronZO)
-max_rank = 16                # Maximum rank for adaptive scheduling (not used by KronZO)
-rank_strategy = 'linear'     # Rank scheduling strategy (not used by KronZO)
-
-# =============================================================================
-# SVD-LOZO SPECIFIC PARAMETERS (for compatibility)
-# =============================================================================
-# These parameters are not used by KronZO methods but are needed for config compatibility
-svd_tau = 0.6               # Threshold for adaptive rank selection (not used by KronZO)
-svd_max_rank = 16           # Maximum rank for randomized SVD (not used by KronZO)
-use_full_svd = False        # Use full SVD vs randomized SVD (not used by KronZO)
+rank_r = 4                      # Not used by KronZO
+rank_adaptive = False           # Not used by KronZO
+min_rank = 1                    # Not used by KronZO
+max_rank = 16                   # Not used by KronZO
+svd_tau = 0.6                   # Not used by KronZO
+svd_max_rank = 16               # Not used by KronZO
+use_full_svd = False            # Not used by KronZO
 
 # =============================================================================
 # LEARNING RATE SCHEDULE
 # =============================================================================
 decay_lr = True      # Whether to decay learning rate
-warmup_iters = 100   # Number of warmup iterations
-lr_decay_iters = 1000  # Should be ~= max_iters for cosine decay
-min_lr = 1e-4        # Minimum learning rate (should be ~= learning_rate/10)
+warmup_iters = 1000    # Much shorter warmup (was 200) 
+lr_decay_iters = 50000  # Should be ~= max_iters for cosine decay
+min_lr = 3e-5        # Higher minimum learning rate (was 1e-4)
 
 # =============================================================================
 # SYSTEM SETTINGS
 # =============================================================================
-device = 'cuda'      # OPTIONS: 'cuda', 'cpu', 'mps' (for Apple Silicon)
+device = 'cuda'      # OPTIONS: 'cuda', 'cpu', 'mps'
 dtype = 'bfloat16'   # OPTIONS: 'float32', 'bfloat16', 'float16'
-compile = True       # Use PyTorch 2.0 compilation (set False for CPU)
+compile = True       # Use PyTorch 2.0 compilation
+backend = 'nccl'     # DDP backend
 
-# DDP settings (for multi-GPU training)
-backend = 'nccl'     # OPTIONS: 'nccl', 'gloo'
+# =============================================================================
+# TRAINING METHOD SPECIFIC CONFIGURATIONS
+# =============================================================================
+# Uncomment and modify the appropriate section based on your chosen train_method
+
+# # STANDARD KRONZO CONFIGURATION
+# if train_method == 'kronzo':
+#     directional_q = 1  # Not used, included for compatibility
+#     out_dir = 'out-kronzo'
+#     wandb_run_name = 'kronzo-run'
+#     learning_rate = 1e-3
+#     zo_eps = 1e-3
+#     directional_q = 10  # Not used by kronzo
+#     loss_history_size = 10  # Not used by kronzo
+
+# # DIRECTIONAL KRONZO (DIKRONZO) CONFIGURATION  
+# if train_method == 'dikronzo':
+#     directional_q = 10  # Number of directions to try
+#     out_dir = 'out-dikronzo'
+#     wandb_run_name = 'dikronzo-run'
+#     learning_rate = 1e-3
+#     zo_eps = 1e-3
+#     loss_history_size = 10  # Not used by dikronzo
+
+# # IMPROVED DIRECTIONAL KRONZO CONFIGURATION (DEFAULT)
+# if train_method == 'improved_kronzo':
+#     directional_q = 33  # More thorough direction evaluation
+#     out_dir = 'out-improved-kronzo'
+#     wandb_run_name = 'improved-kronzo-run'
+#     learning_rate = 3e-4  # Slightly higher for meaningful steps
+#     zo_eps = 5e-4  # Increased for better signal
+#     loss_history_size = 10  # Conservative update history
 
 # =============================================================================
 # DATASET-SPECIFIC CONFIGURATIONS
@@ -197,40 +204,46 @@ backend = 'nccl'     # OPTIONS: 'nccl', 'gloo'
 #     learning_rate = 1e-3
 #     zo_eps = 1e-3
 #     kron_max_factor = 32
+#     directional_q = 20 if train_method == 'improved_kronzo' else 10
 
 # # OPENWEBTEXT DATASET (medium scale)
 # if dataset == 'openwebtext':
-#     batch_size = 12
+#     batch_size = 32
 #     block_size = 1024
-#     max_iters = 600000
-#     eval_interval = 2000
-#     gradient_accumulation_steps = 40
+#     max_iters = 50000
+#     eval_interval = 500
+#     gradient_accumulation_steps = 1
 #     n_layer, n_head, n_embd = 12, 12, 768
-#     learning_rate = 6e-4
-#     zo_eps = 1e-3
+#     learning_rate = 3e-4 if train_method == 'improved_kronzo' else 6e-4
+#     zo_eps = 5e-4 if train_method == 'improved_kronzo' else 1e-3
 #     kron_max_factor = 64
-
-# # GPT2 DATASET (large scale)
-# if dataset == 'gpt2':
-#     batch_size = 12
-#     block_size = 1024
-#     max_iters = 600000
-#     eval_interval = 2000
-#     gradient_accumulation_steps = 40
-#     n_layer, n_head, n_embd = 12, 12, 768
-#     learning_rate = 6e-4
-#     zo_eps = 1e-3
-#     kron_max_factor = 64
+#     directional_q = 33 if train_method == 'improved_kronzo' else 10
 
 # =============================================================================
-# KRONECKER FACTORIZATION EXAMPLES
+# ALGORITHM NOTES
 # =============================================================================
-# For a matrix W ∈ ℝ^(d_out × d_in), KronZO uses perturbations A ⊗ B where:
-# - A ∈ ℝ^(m1 × n1), B ∈ ℝ^(m2 × n2)
-# - m1 * m2 = d_out, n1 * n2 = d_in
-# - Storage: m1*n1 + m2*n2 instead of d_out*d_in
+# 
+# STANDARD KRONZO ('kronzo'):
+# - Uses single Kronecker perturbation A ⊗ B
+# - Estimates gradient: c = [f(θ + ε*Z) - f(θ - ε*Z)] / (2ε)
+# - Updates: θ ← θ - lr*c*Z
+# - Fast, memory efficient
 #
-# Strategy examples for W ∈ ℝ^(768 × 768):
-# - 'approx_square': A(28×28) ⊗ B(27×27) ≈ sqrt factorization
-# - 'fixed_factor': A(32×32) ⊗ B(24×24) with max_factor=32
-# - 'power2': A(32×32) ⊗ B(24×24) using largest power-of-2 divisors 
+# DIRECTIONAL KRONZO ('dikronzo'):
+# - Evaluates multiple directions, picks best
+# - For each direction: evaluate f(θ + ε*Z_i)
+# - Choose best direction, then estimate gradient on it
+# - More expensive but potentially better directions
+#
+# IMPROVED DIRECTIONAL KRONZO ('improved_kronzo'):
+# - Evaluates actual update candidates, not just directions
+# - For each direction: compute candidate update θ - lr*c_i*Z_i
+# - Evaluate f(θ - lr*c_i*Z_i) for each candidate
+# - Conservative acceptance: only accept if candidate beats historical performance
+# - Most expensive but most sophisticated update selection
+# - Cost: 3*directional_q function evaluations per step
+#
+# Memory efficiency comparison:
+# - Full perturbation: O(d_out * d_in) storage per parameter
+# - Kronecker: O(m1*n1 + m2*n2) storage, where m1*m2=d_out, n1*n2=d_in
+# - Typical savings: ~10x-100x memory reduction for large matrices 

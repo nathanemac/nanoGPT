@@ -28,6 +28,10 @@ from kronzo_utils import (
     kronzo_perturb_parameters, kronzo_step, kronzo_update, kronzo_update_momentum,
     dikronzo_perturb_parameters, dikronzo_step, dikronzo_update, dikronzo_update_momentum
 )
+from kronzo_utils_improved_directional import (
+    ImprovedDirectionalHistory, improved_kronzo_step, 
+    improved_kronzo_update, improved_kronzo_update_momentum
+)
 from first_order_utils import first_order_update
 
 # -----------------------------------------------------------------------------
@@ -91,6 +95,7 @@ adaptive_eps_window = 20
 adaptive_eps_lr_coupling = 0.5
 adaptive_eps_success_high = 0.7
 adaptive_eps_success_low = 0.3
+loss_history_size = 10  # For improved directional KronZO conservative updates
 
 # This will be set by train.sh via command line argument
 method_config_file = None 
@@ -297,14 +302,17 @@ if not init_from == 'resume':
     exp_avg_m = {}
     v_old_dict = {}
     b_dict = {}  # B matrix storage for KronZO methods
+    improved_directional_history = ImprovedDirectionalHistory(loss_history_size)  # For improved KronZO
 elif 'exp_avg_m' in checkpoint and (train_method in ['lozom', 'mezom', 'dilozo', 'kronzo', 'dikronzo'] and use_momentum):
     exp_avg_m = checkpoint['exp_avg_m']
     v_old_dict = checkpoint.get('v_old_dict', {})
     b_dict = checkpoint.get('b_dict', {})  # Load B matrices for KronZO methods
+    improved_directional_history = ImprovedDirectionalHistory(loss_history_size)  # For improved KronZO (not saved in checkpoint)
 else:
     exp_avg_m = {}
     v_old_dict = {}
     b_dict = {}  # Initialize B matrix storage
+    improved_directional_history = ImprovedDirectionalHistory(loss_history_size)  # For improved KronZO
 
 if use_adaptive_eps:
     adaptive_eps_manager = AdaptiveZoEps(
@@ -440,11 +448,11 @@ while True:
                 }
                 if use_adaptive_eps and adaptive_eps_manager is not None:
                     checkpoint_data['adaptive_eps_manager_state'] = adaptive_eps_manager.get_state()
-                if train_method in ['lozom', 'mezom', 'dilozo', 'kronzo', 'dikronzo'] and use_momentum:
+                if train_method in ['lozom', 'mezom', 'dilozo', 'kronzo', 'dikronzo', 'improved_kronzo'] and use_momentum:
                     checkpoint_data['exp_avg_m'] = exp_avg_m
                     if train_method == 'lozom':
                         checkpoint_data['v_old_dict'] = v_old_dict
-                if train_method in ['kronzo', 'dikronzo']:
+                if train_method in ['kronzo', 'dikronzo', 'improved_kronzo']:
                     checkpoint_data['b_dict'] = b_dict  # Save B matrices for KronZO methods
                 print(f"saving checkpoint to {out_dir}")
                 torch.save(checkpoint_data, os.path.join(out_dir, 'ckpt.pt')) # Use a different name for the dict
@@ -860,6 +868,86 @@ while True:
                 learning_rate  = current_lr_for_eps_record,
                 method_info    = {'success': first_microbatch_success_val}
             )
+        step += 1
+    elif train_method == 'improved_kronzo':
+        # Improved directional KronZO with conservative updates
+        accumulated_loss = 0.0
+        accumulated_should_update = False
+        accumulated_candidate_step_data = None
+        accumulated_best_candidate_loss = 0.0
+        
+        for micro_step in range(gradient_accumulation_steps):
+            current_zo_seed = np.random.randint(1_000_000_000)
+            
+            # Evaluate current directional candidates on SAME batch (X, Y)
+            (baseline_loss_val, best_candidate_loss_val, best_direction_info, 
+             should_update_val, candidate_step_data_val) = improved_kronzo_step(
+                raw_model, X, Y,
+                step=step,
+                zo_random_seed=current_zo_seed,
+                directional_q=directional_q,
+                zo_eps=effective_zo_eps_to_use,
+                lr=lr,  # Use current learning rate for candidate evaluation
+                ctx_obj=ctx,
+                strategy=kron_strategy,
+                max_factor=kron_max_factor,
+                kronzo_sampling_number=kronzo_sampling_number,
+                b_dict=b_dict,
+                step_interval=step_interval,
+                loss_history=improved_directional_history,
+                get_batch_fn=lambda: get_batch('train')  # CRITICAL: Use fresh batches for evaluation
+            )
+            
+            accumulated_loss += baseline_loss_val / gradient_accumulation_steps
+            
+            # Use first micro-step's decision for the overall update
+            if micro_step == 0:
+                accumulated_should_update = should_update_val
+                accumulated_candidate_step_data = candidate_step_data_val
+                accumulated_best_candidate_loss = best_candidate_loss_val
+                
+                # Enhanced logging with history information
+                if master_process and step % 50 == 0:  # Log every 50 steps
+                    history_info = improved_directional_history.get_history_info()
+                    improvement = best_direction_info.get('improvement', 0.0)
+                    relative_improvement = best_direction_info.get('relative_improvement', 0.0)
+                    used_fresh_batch = best_direction_info.get('used_fresh_batch', False)
+                    candidate_range = best_direction_info.get('candidate_loss_range', 0.0)
+                    num_candidates = best_direction_info.get('num_candidates', 0)
+                    
+                    print(f"  Improved KronZO step {step}: baseline={baseline_loss_val:.4f}, "
+                          f"best_candidate={best_candidate_loss_val:.4f}, "
+                          f"improvement={improvement:.4f} ({relative_improvement:.2%}), "
+                          f"history_phase={history_info['phase']}, threshold={history_info['threshold']:.4f}, "
+                          f"fresh_batch={used_fresh_batch}, range={candidate_range:.4f}, "
+                          f"candidates={num_candidates}, accept={should_update_val}")
+            
+            # Get next batch for next iteration (but not after the last micro-step)
+            if micro_step < gradient_accumulation_steps - 1:
+                X, Y = get_batch('train')
+        
+        # Apply update if accepted and update loss history
+        if accumulated_should_update:
+            if use_momentum:
+                improved_kronzo_update_momentum(
+                    raw_model, optimizer, accumulated_candidate_step_data, exp_avg_m,
+                    beta1=momentum_beta, master_process=master_process, weight_decay=weight_decay
+                )
+            else:
+                improved_kronzo_update(
+                    raw_model, optimizer, accumulated_candidate_step_data,
+                    master_process=master_process, weight_decay=weight_decay
+                )
+            
+            # CORRECTED: Update loss history with successful candidate loss ONLY on successful updates
+            improved_directional_history.add_loss(accumulated_best_candidate_loss)
+            
+        elif master_process and step % 50 == 0:
+            print(f"  Improved KronZO step {step}: Update rejected - candidate not better than history")
+        
+        # Set loss for logging (use baseline loss for consistency with evaluation)
+        loss = torch.tensor(accumulated_loss, device=device, dtype=torch.float32)
+        
         step += 1
     else:
         loss, X, Y = first_order_update(
