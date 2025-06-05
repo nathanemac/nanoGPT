@@ -225,6 +225,11 @@ torch.manual_seed(1337 + seed_offset)
 torch.backends.cuda.matmul.allow_tf32 = True
 torch.backends.cudnn.allow_tf32 = True
 device_type = 'cuda' if 'cuda' in device else 'cpu'
+# Handle device setup for non-DDP case (similar to DDP logic)
+if not ddp and device_type == 'cuda' and ':' in device:
+    # Extract device number from 'cuda:X' format  
+    device_num = int(device.split(':')[1])
+    torch.cuda.set_device(device_num)
 ptdtype = {'float32': torch.float32, 'bfloat16': torch.bfloat16, 'float16': torch.float16}[dtype]
 ctx = nullcontext() if device_type == 'cpu' else torch.amp.autocast(device_type=device_type, dtype=ptdtype)
 
