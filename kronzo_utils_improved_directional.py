@@ -33,13 +33,14 @@ class ImprovedDirectionalHistory:
         """
         Determine if we should accept an update based on candidate loss.
         
-        CORRECTED LOGIC per user specification:
-        - If no history yet: accept any improvement over baseline
-        - If have history: accept only if candidate_loss ≤ max{previous successful losses}
+        FIXED LOGIC:
+        - If no history yet: accept any improvement over baseline (more lenient)
+        - If have history: accept if candidate_loss ≤ max{previous successful losses}
+        - Also accept if candidate shows significant improvement over baseline (escape hatch)
         
         Args:
             candidate_loss: Loss value for the candidate update
-            baseline_loss: Current baseline loss f(θ) (used only for initialization)
+            baseline_loss: Current baseline loss f(θ) (used for initialization and escape hatch)
             
         Returns:
             True if update should be accepted
@@ -48,8 +49,9 @@ class ImprovedDirectionalHistory:
         
         # During initialization phase (not enough history yet)
         if len(self.loss_history) < self.history_size:
-            # Accept if candidate improves over baseline
-            should_accept = candidate_loss < baseline_loss
+            # Accept if candidate improves over baseline OR is close to baseline
+            improvement_threshold = 0.01  # Accept if within 1% of baseline
+            should_accept = candidate_loss <= baseline_loss * (1 + improvement_threshold)
             if should_accept:
                 self.accepted_decisions += 1
                 self.accepted_due_to_improvement += 1
@@ -57,7 +59,17 @@ class ImprovedDirectionalHistory:
             
         # Conservative phase: candidate must beat the worst of our successful history
         max_historical_loss = max(self.loss_history)
+        
+        # Primary criterion: beat historical performance
         should_accept = candidate_loss <= max_historical_loss
+        
+        # Escape hatch: accept significant improvements over current baseline
+        if not should_accept:
+            relative_improvement = (baseline_loss - candidate_loss) / baseline_loss
+            if relative_improvement > 0.05:  # 5% improvement over current baseline
+                should_accept = True
+                if self.total_decisions % 50 == 0:  # Log occasionally
+                    print(f"  Accepting due to escape hatch: {relative_improvement:.2%} improvement")
         
         if should_accept:
             self.accepted_decisions += 1
@@ -390,16 +402,19 @@ def improved_kronzo_update_momentum(model,
                                    weight_decay: float = 0.1,
                                    named_parameters_to_optim: list[tuple[str, torch.Tensor]] | None = None):
     """
-    Apply improved KronZO update with EFFICIENT momentum storage.
+    Apply improved KronZO update with PROPER matrix-level momentum that maintains evaluation consistency.
     
-    FIXED: Now uses the same efficient A-matrix-only storage as DiKronZO instead of
-    storing full parameter-sized tensors. This reduces memory usage by ~750x per parameter.
+    CORRECT APPROACH:
+    1. Use the SAME kronzo_perturb_parameters function to generate the exact matrices as evaluation
+    2. Apply momentum to the (coefficient * A) matrices per parameter
+    3. Reconstruct the full perturbation using stored B matrices
+    4. This maintains both consistency AND proper momentum accumulation
     
     Args:
         model: The model to update
         optimizer: Optimizer (kept for API compatibility)
         candidate_step_data: Data from improved_kronzo_step
-        exp_avg_m: Dictionary storing momentum states (now stores A matrices only)
+        exp_avg_m: Dictionary storing momentum states (stores A matrices per parameter)
         beta1: Momentum coefficient
         master_process: Whether this is master process (for logging)
         weight_decay: Weight decay coefficient  
@@ -432,14 +447,14 @@ def improved_kronzo_update_momentum(model,
     # Set the random seed to match the evaluation phase exactly
     torch.manual_seed(best_seed)
     
-    # Debug logging only on first step
-    if step == 0 and master_process:
-        print(f"Improved KronZO-M: FIXED - Using efficient A-matrix-only momentum storage")
-        print(f"Improved KronZO-M: Memory usage now comparable to DiKronZO")
+    # Debug logging
+    if step % 100 == 0 and master_process:
+        print(f"Improved KronZO-M step {step}: coefficient={best_projected_grad:.6f}, "
+              f"beta1={beta1}, using matrix-level momentum")
 
-    # Apply efficient momentum updates using the same logic as DiKronZO
+    # Apply matrix-level momentum using the same approach as DiKronZO
     for clean_name, param in named_parameters_to_optim:
-        if param.ndim >= 2:                          # matrices
+        if param.ndim >= 2:  # matrices
             d_out, d_in = param.shape
             
             if kronzo_sampling_number == 1:
@@ -466,7 +481,7 @@ def improved_kronzo_update_momentum(model,
                 # EFFICIENT MOMENTUM: Store only A matrix scaled by gradient coefficient
                 momentum_key = f"{clean_name}_A"
                 if momentum_key not in exp_avg_m:
-                    exp_avg_m[momentum_key] = torch.zeros_like(A)  # Small A matrix only!
+                    exp_avg_m[momentum_key] = torch.zeros_like(A)
                 
                 # Update momentum: m_t = β * m_{t-1} + (1-β) * (c * A)
                 grad_scaled_A = best_projected_grad * A
@@ -474,6 +489,7 @@ def improved_kronzo_update_momentum(model,
                 
                 # Apply momentum: A_momentum ⊗ B
                 momentum_perturbation = torch.kron(exp_avg_m[momentum_key], B)
+                
             else:
                 # Multi-sampling: efficient momentum for each factorization
                 factorizations = choose_diverse_kron_dims(d_out, d_in, kronzo_sampling_number, strategy, max_factor)
@@ -501,7 +517,7 @@ def improved_kronzo_update_momentum(model,
                     # EFFICIENT MOMENTUM: Store only A matrix scaled by gradient coefficient
                     momentum_key = f"{clean_name}_A_{i}"
                     if momentum_key not in exp_avg_m:
-                        exp_avg_m[momentum_key] = torch.zeros_like(A)  # Small A matrix only!
+                        exp_avg_m[momentum_key] = torch.zeros_like(A)
                     
                     # Update momentum: m_t = β * m_{t-1} + (1-β) * (c * A)
                     grad_scaled_A = best_projected_grad * A
@@ -523,7 +539,8 @@ def improved_kronzo_update_momentum(model,
                 param.data.sub_(lr * (momentum_perturbation + weight_decay * param.data))
             else:
                 param.data.sub_(lr * momentum_perturbation)
-        else:                                        # vectors
+                
+        else:  # vectors
             z = torch.normal(0.0, 1.0,
                              size=param.size(),
                              device=param.device,
