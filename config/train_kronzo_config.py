@@ -9,10 +9,11 @@ import torch
 # =============================================================================
 # TRAINING METHOD SELECTION
 # =============================================================================
-train_method = 'improved_kronzo'  # OPTIONS: 'kronzo', 'dikronzo', 'improved_kronzo'
+train_method = 'improved_kronzo'  # OPTIONS: 'kronzo', 'dikronzo', 'improved_kronzo', 'new_improved_kronzo'
                                   # 'kronzo': Standard KronZO with single direction
                                   # 'dikronzo': Directional KronZO with best direction selection
                                   # 'improved_kronzo': Advanced directional KronZO with conservative updates
+                                  # 'new_improved_kronzo': Baseline history management (less restrictive)
 
 # =============================================================================
 # DATASET AND MODEL SELECTION
@@ -24,7 +25,7 @@ init_from = 'scratch'    # OPTIONS: 'scratch', 'resume', 'gpt2', 'gpt2-medium', 
 # OUTPUT AND LOGGING SETTINGS
 # =============================================================================
 out_dir = 'out-improved-kronzo'   # Output directory for checkpoints and logs
-eval_interval = 500              # How often to evaluate on validation set
+eval_interval = 500            # How often to evaluate on validation set
 log_interval = 1                 # How often to log training progress
 eval_iters = 50                  # Number of iterations for evaluation
 eval_only = False                # If True, only run evaluation and exit
@@ -56,8 +57,8 @@ bias = False     # Use bias in LayerNorm and Linear layers
 # =============================================================================
 # OPTIMIZER SETTINGS
 # =============================================================================
-learning_rate = 3e-4  # Increased for meaningful steps (was 1e-3)
-max_iters = 50000      # Total number of training iterations
+learning_rate = 3e-4  # 
+max_iters = 50000      # Total number of training iterations (LOW FOR BENCHMARKING)
 weight_decay = 1e-1   # L2 regularization strength
 
 # Standard optimizer parameters (kept for compatibility)
@@ -68,7 +69,7 @@ grad_clip = 1.0      # Clip gradients at this value (0.0 to disable)
 # =============================================================================
 # ZERO-ORDER OPTIMIZATION PARAMETERS
 # =============================================================================
-zo_eps = 5e-4        # Perturbation size for gradient estimation (increased for better signal)
+zo_eps = 3e-4        # Perturbation size for gradient estimation (increased for better signal)
 
 # =============================================================================
 # KRONECKER PRODUCT PARAMETERS
@@ -85,12 +86,19 @@ kronzo_sampling_number = 1       # Number of Kronecker products to sample and su
                                 # OPTIONS: 1 (standard KronZO using kron_strategy), 
                                 #          2-5 (multi-sampling with overlapping prime-factor strategy)
 
-step_interval = 50               # Interval for updating B matrices (every ν steps)
+rank_kronzo = 4                # Rank for low-rank factorization of A and B matrices
+                                # A = U_A V_A^T, B = U_B V_B^T where U,V have rank_kronzo columns
+                                # Controls rank(A⊗B) ≤ rank_kronzo^2, enabling memory-efficient KronZO
+                                # MEMORY SAVINGS: O((m1+n1+m2+n2)*rank_kronzo) vs O(m1*n1+m2*n2)
+                                
+
+step_interval = 5               # Interval for updating B matrices (every ν steps)
+                                
 
 # =============================================================================
 # MOMENTUM SETTINGS
 # =============================================================================
-use_momentum = True              # Enable momentum for improved KronZO
+use_momentum = False              # Enable momentum for improved KronZO
 momentum_beta = 0.9             # Momentum coefficient
 
 # =============================================================================
@@ -103,21 +111,31 @@ directional_q = 33                # Number of directions to evaluate
                                 # NOTE: Higher values = more expensive but potentially better updates
                                 # Cost: 3*directional_q function evaluations per step for improved_kronzo
 
-# CONSERVATIVE UPDATE PARAMETERS (for improved_kronzo)  
-loss_history_size = 10            # Number of previous successful losses to track
-                                # Only used by 'improved_kronzo' method
-                                # Controls conservative update acceptance:
-                                # - Accept update only if candidate loss ≤ max{previous successful losses}
-                                # - Smaller values = less conservative, faster adaptation
-                                # - Larger values = more conservative, slower but safer
+# CONSERVATIVE UPDATE PARAMETERS (for improved_kronzo and new_improved_kronzo)  
+loss_history_size = 10            # Number of history entries to track
+                                # improved_kronzo: tracks successful update losses
+                                # new_improved_kronzo: tracks baseline losses from recent iterations
+                                # Controls conservative update acceptance
 
-# =============================================================================
-# COMPATIBILITY PARAMETERS
-# =============================================================================
-# These parameters are needed for config compatibility but not used by improved KronZO
-zo_q = 1                        # Not used by directional methods
-dimezo_direct_movement = False   # Not used by KronZO
-dikronzo_direct_movement = False # Enable direct movement for DiKronZO (not used by improved_kronzo)
+# DEBUGGING FLAG FOR NEW_IMPROVED_KRONZO CONSERVATIVE UPDATE STRATEGY
+use_baseline_history = False       # For new_improved_kronzo only:
+                                # True: Track baseline losses regardless of acceptance (new approach)
+                                #       - History: f(θ_k; batch_k) from recent iterations
+                                #       - Accept if: candidate_loss ≤ max{recent baseline losses}
+                                #       - Updates history ALWAYS after each decision
+                                # False: Track successful update losses only (like improved_kronzo)
+                                #        - History: Only losses from accepted updates
+                                #        - Accept if: candidate_loss ≤ max{successful update losses}
+                                #        - Updates history ONLY when update is accepted
+                                
+# DEBUGGING FLAG FOR LOW-RANK FACTORIZATION vs TRADITIONAL MATRIX SAMPLING
+use_lowrank_factorization = False   # For new_improved_kronzo only:
+                                # True: Use low-rank factorization A = U_A V_A^T, B = U_B V_B^T (new approach)
+                                #       - Memory efficient: O((m1+n1+m2+n2)*rank_kronzo) storage
+                                #       - Rank control: rank(A⊗B) ≤ rank_kronzo^2
+                                # False: Use traditional full matrix sampling A, B (like improved_kronzo)  
+                                #        - Standard storage: O(m1*n1+m2*n2) for full matrices
+                                #        - Direct matrix generation without factorization
 
 # =============================================================================
 # ADAPTIVE ZO_EPS SETTINGS
@@ -144,9 +162,10 @@ use_full_svd = False            # Not used by KronZO
 # LEARNING RATE SCHEDULE
 # =============================================================================
 decay_lr = True      # Whether to decay learning rate
-warmup_iters = 1000    # Much shorter warmup (was 200) 
-lr_decay_iters = 50000  # Should be ~= max_iters for cosine decay
-min_lr = 3e-5        # Higher minimum learning rate (was 1e-4)
+warmup_iters = 30    # 
+lr_decay_iters = 300  # Should be ~= max_iters for cosine decay
+min_lr = 1e-5        # Higher minimum learning rate (was 1e-4)
+
 
 # =============================================================================
 # SYSTEM SETTINGS
@@ -188,6 +207,15 @@ backend = 'nccl'     # DDP backend
 #     learning_rate = 3e-4  # Slightly higher for meaningful steps
 #     zo_eps = 5e-4  # Increased for better signal
 #     loss_history_size = 10  # Conservative update history
+
+# # NEW IMPROVED DIRECTIONAL KRONZO CONFIGURATION (BASELINE HISTORY)
+# if train_method == 'new_improved_kronzo':
+#     directional_q = 33  # More thorough direction evaluation
+#     out_dir = 'out-new-improved-kronzo'
+#     wandb_run_name = 'new-improved-kronzo-run'
+#     learning_rate = 3e-4  # Slightly higher for meaningful steps
+#     zo_eps = 5e-4  # Increased for better signal
+#     loss_history_size = 10  # Baseline history size (less restrictive than improved_kronzo)
 
 # =============================================================================
 # DATASET-SPECIFIC CONFIGURATIONS
@@ -243,7 +271,19 @@ backend = 'nccl'     # DDP backend
 # - Most expensive but most sophisticated update selection
 # - Cost: 3*directional_q function evaluations per step
 #
+# NEW IMPROVED DIRECTIONAL KRONZO ('new_improved_kronzo'):
+# - Same as improved_kronzo but with baseline history management
+# - History: stores baseline losses f(θ_k; batch_k) from recent iterations
+# - Acceptance: candidate_loss ≤ max{recent baseline losses} (less restrictive)
+# - Updates history after each decision, regardless of acceptance
+# - LOW-RANK FACTORIZATION: A = U_A V_A^T, B = U_B V_B^T for memory efficiency
+# - Storage: O((m1+n1+m2+n2)*rank_kronzo) vs O(m1*n1+m2*n2) for full matrices
+# - Rank control: rank(A⊗B) ≤ rank_kronzo^2
+# - Cost: 3*directional_q function evaluations per step + 1 baseline evaluation (overhead)
+#
 # Memory efficiency comparison:
 # - Full perturbation: O(d_out * d_in) storage per parameter
-# - Kronecker: O(m1*n1 + m2*n2) storage, where m1*m2=d_out, n1*n2=d_in
-# - Typical savings: ~10x-100x memory reduction for large matrices 
+# - Standard Kronecker: O(m1*n1 + m2*n2) storage, where m1*m2=d_out, n1*n2=d_in
+# - Low-rank Kronecker: O((m1+n1+m2+n2)*rank_kronzo) storage
+# - Typical savings: ~10x-100x memory reduction vs standard Kronecker
+# - Ultra savings: ~1000x-10000x memory reduction vs full perturbation 
