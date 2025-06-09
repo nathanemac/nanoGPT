@@ -50,7 +50,7 @@ class ImprovedDirectionalHistory:
         # During initialization phase (not enough history yet)
         if len(self.loss_history) < self.history_size:
             # Accept if candidate improves over baseline OR is close to baseline
-            improvement_threshold = 0.01  # Accept if within 1% of baseline
+            improvement_threshold = 0.03  # Accept if within 3% of baseline
             should_accept = candidate_loss <= baseline_loss * (1 + improvement_threshold)
             if should_accept:
                 self.accepted_decisions += 1
@@ -66,7 +66,7 @@ class ImprovedDirectionalHistory:
         # Escape hatch: accept significant improvements over current baseline
         if not should_accept:
             relative_improvement = (baseline_loss - candidate_loss) / baseline_loss
-            if relative_improvement > 0.05:  # 5% improvement over current baseline
+            if relative_improvement > 0.03:  # 3% improvement over current baseline
                 should_accept = True
                 if self.total_decisions % 50 == 0:  # Log occasionally
                     print(f"  Accepting due to escape hatch: {relative_improvement:.2%} improvement")

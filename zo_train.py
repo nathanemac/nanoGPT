@@ -5,7 +5,6 @@ import pickle
 from contextlib import nullcontext
 import psutil
 import torch.cuda as cuda
-from tqdm import tqdm
 
 import numpy as np
 import torch
@@ -35,6 +34,9 @@ from kronzo_utils_improved_directional import (
 from kronzo_utils_new_improved_directional import (
     NewImprovedDirectionalHistory, new_improved_kronzo_step,
     new_improved_kronzo_update, new_improved_kronzo_update_momentum
+)
+from sczo_utils import (
+    SCZOState, sczo_step, sczo_update_with_weight_decay
 )
 from first_order_utils import first_order_update
 
@@ -89,7 +91,7 @@ svd_tau = 0.6
 svd_max_rank = 16
 use_full_svd = False
 train_method = 'adam' # Default training method, WILL be overridden by method-specific config
-directional_q = 10
+directional_q = 32           # Increased from 10: Number of directions for bootstrap
 dimezo_direct_movement = False
 kron_max_factor = 32
 kron_strategy = 'approx_square'
@@ -104,8 +106,29 @@ loss_history_size = 10  # For improved directional KronZO conservative updates
 use_baseline_history = False
 use_lowrank_factorization = False
 
+# SCZO specific parameters (defaults, can be overridden by method configs)
+sczo_alpha = 1e-3           # Step size for SCZO updates
+sczo_beta = 0.9             # EMA factor for gradient estimate updates  
+sczo_eps = 1e-8             # Damping parameter for numerical stability
+sczo_bootstrap_interval = 10 # Reduced from 20: Frequency of ZO gradient bootstrap (more frequent early)
+sczo_multi_batch = 16        # Increased from 2: Number of batches for multi-signal gradient estimation
+
+# Multi-secant memory parameters (temporal constraints)
+sczo_multi_secant_m = 0      # DISABLED: Set to 0 to test spatial-only SCZO first
+sczo_multi_secant_rho = 0.9  # Increased from 0.8: Exponential decay weight for historical constraints  
+sczo_multi_secant_eps_reg = 1e-5  # Increased from 1e-6: Tikhonov regularization for LS solver
+sczo_multi_secant_max_cond = 5000  # Relaxed from 100: Max condition number before restart
+sczo_multi_secant_min_signal = 1e-9  # Relaxed from 1e-6: Min signal strength to keep constraint
+
+# Preconditioning parameters
+sczo_precond_type = 'identity'           # Default to identity, can be overridden by config
+sczo_precond_layerwise_ema = 0.99        # EMA factor for layer-wise scaling τ(l)
+sczo_precond_diagonal_ema = 0.99         # EMA factor for diagonal preconditioning v(l)  
+sczo_precond_diagonal_eps = 1e-8         # Epsilon for diagonal stability
+sczo_precond_unit_wise = True            # Use unit-wise diagonal (memory efficient)
+
 # This will be set by train.sh via command line argument
-method_config_file = None 
+method_config_file = None
 
 # -----------------------------------------------------------------------------
 config_keys = [k for k,v in globals().items() if not k.startswith('_') and isinstance(v, (int, float, bool, str))]
@@ -297,6 +320,7 @@ elif init_from == 'resume':
     best_val_loss = checkpoint['best_val_loss']
     v_dict = checkpoint.get('v_dict', {})
     step = checkpoint.get('step', 0)
+    sczo_checkpoint_state = checkpoint.get('sczo_state', None)
 elif init_from.startswith('gpt2'):
     print(f"Initializing from OpenAI GPT-2 weights: {init_from}")
     override_args = dict(dropout=dropout)
@@ -318,6 +342,8 @@ if not init_from == 'resume':
     vb_dict = {}  # V_B matrix storage for low-rank KronZO methods
     improved_directional_history = ImprovedDirectionalHistory(loss_history_size)  # For improved KronZO
     new_improved_directional_history = NewImprovedDirectionalHistory(loss_history_size, use_baseline_history=use_baseline_history)  # For new improved KronZO
+    sczo_state = None  # For SCZO method - will be initialized later if needed
+    sczo_checkpoint_state = None  # No SCZO checkpoint to load for new training
 elif 'exp_avg_m' in checkpoint and (train_method in ['lozom', 'mezom', 'dilozo', 'kronzo', 'dikronzo', 'improved_kronzo', 'new_improved_kronzo'] and use_momentum):
     exp_avg_m = checkpoint['exp_avg_m']
     v_old_dict = checkpoint.get('v_old_dict', {})
@@ -326,6 +352,8 @@ elif 'exp_avg_m' in checkpoint and (train_method in ['lozom', 'mezom', 'dilozo',
     vb_dict = checkpoint.get('vb_dict', {})  # Load V_B matrices for low-rank KronZO methods
     improved_directional_history = ImprovedDirectionalHistory(loss_history_size)  # For improved KronZO (not saved in checkpoint)
     new_improved_directional_history = NewImprovedDirectionalHistory(loss_history_size, use_baseline_history=use_baseline_history)  # For new improved KronZO (not saved in checkpoint)
+    sczo_state = None  # For SCZO method - will be initialized later if needed
+    sczo_checkpoint_state = checkpoint.get('sczo_state', None)  # Load SCZO checkpoint state if available
 else:
     exp_avg_m = {}
     v_old_dict = {}
@@ -334,6 +362,32 @@ else:
     vb_dict = {}  # Initialize V_B matrix storage for low-rank KronZO methods
     improved_directional_history = ImprovedDirectionalHistory(loss_history_size)  # For improved KronZO
     new_improved_directional_history = NewImprovedDirectionalHistory(loss_history_size, use_baseline_history=use_baseline_history)  # For new improved KronZO
+    sczo_state = None  # For SCZO method - will be initialized later if needed
+    sczo_checkpoint_state = checkpoint.get('sczo_state', None) if checkpoint else None  # Load SCZO checkpoint state if available
+
+# Load SCZO state from checkpoint if available
+if train_method == 'sczo' and sczo_checkpoint_state is not None:
+    sczo_state = SCZOState(
+        model, 
+        sczo_alpha=sczo_alpha,
+        sczo_beta=sczo_beta,
+        sczo_eps=sczo_eps,
+        sczo_bootstrap_interval=sczo_bootstrap_interval,
+        sczo_multi_batch=sczo_multi_batch,
+        sczo_multi_secant_m=sczo_multi_secant_m,
+        sczo_multi_secant_rho=sczo_multi_secant_rho,
+        sczo_multi_secant_eps_reg=sczo_multi_secant_eps_reg,
+        sczo_multi_secant_max_cond=sczo_multi_secant_max_cond,
+        sczo_multi_secant_min_signal=sczo_multi_secant_min_signal,
+        sczo_precond_type=sczo_precond_type,
+        sczo_precond_layerwise_ema=sczo_precond_layerwise_ema,
+        sczo_precond_diagonal_ema=sczo_precond_diagonal_ema,
+        sczo_precond_diagonal_eps=sczo_precond_diagonal_eps,
+        sczo_precond_unit_wise=sczo_precond_unit_wise
+    )
+    sczo_state.load_state(sczo_checkpoint_state)
+    if master_process:
+        print(f"SCZO: Loaded state from checkpoint")
 
 if use_adaptive_eps:
     adaptive_eps_manager = AdaptiveZoEps(
@@ -428,7 +482,6 @@ local_iter_num = 0
 raw_model = model.module if ddp else model
 running_mfu = -1.0
 
-pbar = tqdm(total=max_iters, desc='Training', disable=not master_process)
 loss = torch.tensor(0.0)
 
 while True:
@@ -478,6 +531,8 @@ while True:
                 if train_method in ['new_improved_kronzo']:
                     checkpoint_data['va_dict'] = va_dict  # Save V_A matrices for low-rank KronZO methods
                     checkpoint_data['vb_dict'] = vb_dict  # Save V_B matrices for low-rank KronZO methods
+                if train_method == 'sczo' and sczo_state is not None:
+                    checkpoint_data['sczo_state'] = sczo_state.get_state()  # Save SCZO state
                 print(f"saving checkpoint to {out_dir}")
                 torch.save(checkpoint_data, os.path.join(out_dir, 'ckpt.pt')) # Use a different name for the dict
     if iter_num == 0 and eval_only:
@@ -520,9 +575,7 @@ while True:
                 lowrank_zo_update_momentum(raw_model, optimizer, accumulated_projected_grad, first_zo_seed, v_dict, exp_avg_m, v_old_dict, step, lr, rank_r, step_interval, weight_decay, master_process, momentum_beta, current_rank=current_rank_val)
             else:
                 lowrank_zo_update(raw_model, optimizer, accumulated_projected_grad, first_zo_seed, v_dict, step, lr, rank_r, weight_decay, master_process, current_rank=current_rank_val)
-        else:
-            lowrank_zo_update_direct(raw_model, optimizer, accumulated_grad_dict, lr, weight_decay)
-        # Add adaptive epsilon support for LOZO 
+        # Add adaptive epsilon support for LOZO
         if use_adaptive_eps and adaptive_eps_manager is not None:
             current_lr_for_eps_record = get_lr(iter_num) if decay_lr else learning_rate
             adaptive_eps_manager.record_step(
@@ -1066,6 +1119,108 @@ while True:
         loss = torch.tensor(accumulated_loss, device=device, dtype=torch.float32)
         
         step += 1
+    elif train_method == 'sczo':
+        # Secant-Constrained Zero-Order optimization
+        
+        # Initialize SCZO state if needed
+        if sczo_state is None:
+            # Use current learning rate for SCZO alpha if decay_lr is enabled
+            current_sczo_alpha = lr if decay_lr else sczo_alpha
+            sczo_state = SCZOState(
+                raw_model, 
+                sczo_alpha=current_sczo_alpha,
+                sczo_beta=sczo_beta,
+                sczo_eps=sczo_eps,
+                sczo_bootstrap_interval=sczo_bootstrap_interval,
+                sczo_multi_batch=sczo_multi_batch,
+                sczo_multi_secant_m=sczo_multi_secant_m,
+                sczo_multi_secant_rho=sczo_multi_secant_rho,
+                sczo_multi_secant_eps_reg=sczo_multi_secant_eps_reg,
+                sczo_multi_secant_max_cond=sczo_multi_secant_max_cond,
+                sczo_multi_secant_min_signal=sczo_multi_secant_min_signal,
+                sczo_precond_type=sczo_precond_type,
+                sczo_precond_layerwise_ema=sczo_precond_layerwise_ema,
+                sczo_precond_diagonal_ema=sczo_precond_diagonal_ema,
+                sczo_precond_diagonal_eps=sczo_precond_diagonal_eps,
+                sczo_precond_unit_wise=sczo_precond_unit_wise
+            )
+            if master_process:
+                print(f"SCZO: Initialized state with alpha={current_sczo_alpha:.2e}, "
+                      f"beta={sczo_beta}, eps={sczo_eps:.2e}, bootstrap_interval={sczo_bootstrap_interval}, "
+                      f"multi_batch={sczo_multi_batch}")
+                print(f"SCZO: Multi-secant memory: m={sczo_multi_secant_m} (DISABLED), rho={sczo_multi_secant_rho}, "
+                      f"eps_reg={sczo_multi_secant_eps_reg:.2e}, max_cond={sczo_multi_secant_max_cond}")
+        else:
+            # Update SCZO alpha with learning rate schedule if enabled
+            if decay_lr:
+                sczo_state.sczo_alpha = lr
+                if master_process and step % 100 == 0:  # Log lr schedule updates occasionally
+                    print(f"SCZO: Updated alpha to {lr:.2e} (following lr schedule)")
+        
+        accumulated_loss_before = 0.0
+        accumulated_loss_after = 0.0
+        accumulated_step_info = {}
+        
+        for micro_step in range(gradient_accumulation_steps):
+            current_zo_seed = np.random.randint(1_000_000_000)
+            
+            # Perform SCZO step
+            loss_before, loss_after, step_info = sczo_step(
+                raw_model, X, Y, sczo_state, step, current_zo_seed,
+                ctx, effective_zo_eps_to_use, directional_q,
+                kron_strategy, kron_max_factor, kronzo_sampling_number,
+                b_dict, step_interval, get_batch_fn=lambda: get_batch('train'),
+                λ_max=20.0, weight_decay=weight_decay
+            )
+            
+            accumulated_loss_before += loss_before / gradient_accumulation_steps
+            accumulated_loss_after += loss_after / gradient_accumulation_steps
+            
+            # Store step info from first micro-step
+            if micro_step == 0:
+                accumulated_step_info = step_info
+                
+                # Enhanced logging
+                if master_process and step % 50 == 0:  # Log every 50 steps
+                    loss_change_mean = step_info.get('loss_change_mean', 0.0)
+                    loss_change_std = step_info.get('loss_change_std', 0.0)
+                    used_batches = step_info.get('used_batches', 1)
+                    gradient_norm = step_info.get('grad_norm', 0.0)
+                    temporal_constraints = step_info.get('temporal_constraints_used', 0)
+                    temporal_restarts = step_info.get('temporal_restarts', 0)
+                    lambda_clipped = step_info.get('lambda_clipped_fraction', 0.0)
+                    used_fresh_batch = True  # Always true with get_batch_fn
+                    bootstrapped = sczo_state.last_bootstrap_step == step
+                    
+                    # Better precision logging for loss variance
+                    signal_ratio = abs(loss_change_mean) / (loss_change_std + 1e-12)
+                    
+                    print(f"  SCZO step {step}: loss_before={loss_before:.4f}, "
+                          f"loss_after={loss_after:.4f}, mean(y)={loss_change_mean:+.3e}, "
+                          f"std(y)={loss_change_std:.3e}, signal_ratio={signal_ratio:.1f}, "
+                          f"batches={used_batches}, grad_norm={gradient_norm:.4f}, "
+                          f"temporal_constraints={temporal_constraints}, restarts={temporal_restarts}, "
+                          f"λ_clipped={lambda_clipped:.1%}, fresh_batch={used_fresh_batch}, "
+                          f"bootstrapped={bootstrapped}, alpha={sczo_state.sczo_alpha:.2e}")
+                
+                # Add debug print for loss changes on first few steps
+                if step <= 5 and master_process:
+                    print(f"    DEBUG: raw loss_changes = {[f'{y:.6f}' for y in accumulated_step_info.get('raw_loss_changes', [])]}")
+                    y_mean = accumulated_step_info.get('loss_change_mean', 0.0)
+                    y_std = accumulated_step_info.get('loss_change_std', 0.0)
+                    print(f"    DEBUG: y mean={y_mean:.6f}, std={y_std:.6f}, |mean|/std={abs(y_mean)/(y_std+1e-12):.2f}")
+            
+            # Get next batch for next iteration (but not after the last micro-step)
+            if micro_step < gradient_accumulation_steps - 1:
+                X, Y = get_batch('train')
+        
+        # Apply weight decay separately to maintain secant constraint
+        sczo_update_with_weight_decay(raw_model, sczo_state, weight_decay)
+        
+        # Set loss for logging (use loss_after for consistency)
+        loss = torch.tensor(accumulated_loss_after, device=device, dtype=torch.float32)
+        
+        step += 1
     else:
         loss, X, Y = first_order_update(
             raw_model, optimizer, X, Y, 
@@ -1098,27 +1253,45 @@ while True:
                 'eps': f"{eps_stats['eps']:.2e}", 
                 'success': f"{eps_stats['success_rate']:.2f}"
             }
-        pbar_info = {
-            'loss': f'{lossf:.4f}',
-            'lr': f'{lr:.2e}',
-            'mem': f'{memory_allocated:.1f}GB',
-            'mfu': f'{running_mfu*100:.1f}%',
-            'step': step
-        }
+        
+        # Print training progress info
+        log_info = f"step {iter_num}: loss={lossf:.4f}, lr={lr:.2e}, mem={memory_allocated:.1f}GB, mfu={running_mfu*100:.1f}%"
+        
         if rank_adaptive and (train_method == 'lozo' or train_method == 'lozom' or train_method == 'dilozo'):
             current_rank = get_current_rank(iter_num, max_iters, min_rank, max_rank, rank_adaptive, rank_r)
-            pbar_info['rank'] = f'{current_rank}/{max_rank}'
+            log_info += f", rank={current_rank}/{max_rank}"
+        
+        # Add SCZO-specific metrics
+        if train_method == 'sczo' and sczo_state is not None:
+            # Get the latest step info
+            if 'accumulated_step_info' in locals() and accumulated_step_info:
+                temporal_constraints = accumulated_step_info.get('temporal_constraints_used', 0)
+                temporal_restarts = accumulated_step_info.get('temporal_restarts', 0)
+                lambda_clipped = accumulated_step_info.get('lambda_clipped_fraction', 0.0)
+                loss_change_mean = accumulated_step_info.get('loss_change_mean', 0.0)
+                loss_change_std = accumulated_step_info.get('loss_change_std', 0.0)
+                signal_ratio = abs(loss_change_mean) / (loss_change_std + 1e-12)
+                
+                log_info += f", temp_C={temporal_constraints}, λ_clip={lambda_clipped:.1%}, signal_ratio={signal_ratio:.1f}"
+                
+                # Show bootstrap status
+                if sczo_state.last_bootstrap_step == step - 1:
+                    log_info += ", status=BOOT"  # Just bootstrapped
+                elif temporal_restarts > 0:
+                    log_info += ", status=REST"  # History restart
+                else:
+                    log_info += ", status=NORM"  # Normal operation
+        
         if eps_info:
-            pbar_info.update(eps_info)
-        pbar.set_postfix(pbar_info)
-        pbar.update(1)
+            log_info += f", eps={eps_info['eps']}, success={eps_info['success']}"
+            
+        print(log_info, flush=True)
+
     iter_num += 1
     local_iter_num += 1
 
     if iter_num > max_iters:
         break
-
-pbar.close()
 
 if ddp:
     destroy_process_group() 
