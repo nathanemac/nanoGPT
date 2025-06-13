@@ -11,14 +11,24 @@ class ImprovedDirectionalHistory:
     """
     Maintains history of loss values for conservative update decisions.
     
-    CORRECTED ALGORITHM:
-    - Keep sliding window of `history_size` previous SUCCESSFUL losses
-    - Accept update only if candidate_loss ≤ max{previous successful losses}  
-    - Only update the sliding window when an update is actually accepted
+    Two modes:
+    1. SUCCESS MODE (default): Keep sliding window of previous SUCCESSFUL losses
+       - Accept update only if candidate_loss ≤ max{previous successful losses}  
+       - Only update the sliding window when an update is actually accepted
+    
+    2. BASELINE MODE: Keep sliding window of previous BASELINE losses (regardless of acceptance)
+       - Accept update only if candidate_loss ≤ max{previous baseline losses}
+       - Update sliding window every iteration regardless of acceptance
     """
-    def __init__(self, history_size: int = 10):
+    def __init__(self, history_size: int = 10, track_baseline_losses: bool = False):
         self.history_size = history_size
-        self.loss_history = deque(maxlen=history_size)  # Stores successful update losses
+        self.track_baseline_losses = track_baseline_losses
+        
+        if track_baseline_losses:
+            self.loss_history = deque(maxlen=history_size)  # Stores baseline losses
+        else:
+            self.loss_history = deque(maxlen=history_size)  # Stores successful update losses
+            
         # Add tracking for verification
         self.total_decisions = 0
         self.accepted_decisions = 0
@@ -27,7 +37,15 @@ class ImprovedDirectionalHistory:
     
     def add_loss(self, loss_value: float):
         """Add a successful loss value to the history (only called on successful updates)."""
-        self.loss_history.append(loss_value)
+        if not self.track_baseline_losses:
+            self.loss_history.append(loss_value)
+        # If tracking baseline losses, this method is ignored (use add_baseline_loss instead)
+    
+    def add_baseline_loss(self, baseline_loss_value: float):
+        """Add a baseline loss value to the history (called every iteration regardless of acceptance)."""
+        if self.track_baseline_losses:
+            self.loss_history.append(baseline_loss_value)
+        # If not tracking baseline losses, this method is ignored (use add_loss instead)
     
     def should_accept_update(self, candidate_loss: float, baseline_loss: float) -> bool:
         """
@@ -123,6 +141,185 @@ class ImprovedDirectionalHistory:
             'accepted': self.accepted_decisions,
             'rejected_due_to_history': self.rejected_due_to_history,
             'accepted_due_to_improvement': self.accepted_due_to_improvement
+        }
+
+class AdaptiveParameterTracker:
+    """
+    Tracks gradient quality (CV) and acceptance rate for adaptive parameter tuning.
+    
+    Maintains sliding windows for:
+    - Coefficient of Variation (CV) of projected gradients
+    - Acceptance rate of updates
+    
+    Adaptively adjusts:
+    - ε (perturbation size) based on CV
+    - α (learning rate) based on acceptance rate and CV
+    
+    Supports warmup period where parameters remain fixed until warmup is complete.
+    """
+    def __init__(self, 
+                 window_size: int = 100,
+                 eps_min: float = 5e-4,
+                 eps_max: float = 5e-2,
+                 alpha_min: float = 1e-4,
+                 alpha_max: float = 3e-2,
+                 initial_eps: float = 1e-3,
+                 initial_alpha: float = 1e-3,
+                 warmup_iters: int = 0):
+        self.window_size = window_size
+        
+        # Parameter bounds
+        self.eps_min = eps_min
+        self.eps_max = eps_max
+        self.alpha_min = alpha_min
+        self.alpha_max = alpha_max
+        
+        # Current adaptive parameters
+        self.current_eps = initial_eps
+        self.current_alpha = initial_alpha
+        self.initial_eps = initial_eps  # Store for warmup
+        self.initial_alpha = initial_alpha  # Store for warmup
+        
+        # Warmup settings
+        self.warmup_iters = warmup_iters
+        self.current_iter = 0
+        
+        # Sliding windows
+        self.cv_history = deque(maxlen=window_size)
+        self.acceptance_history = deque(maxlen=window_size)  # True/False for each iteration
+        
+        # Statistics
+        self.total_iterations = 0
+        self.eps_updates = 0
+        self.alpha_updates = 0
+        
+    def is_in_warmup(self) -> bool:
+        """Check if we are still in the warmup period."""
+        return self.current_iter < self.warmup_iters
+        
+    def set_current_iter(self, iter_num: int):
+        """Set the current iteration number for warmup tracking."""
+        self.current_iter = iter_num
+        
+    def set_warmup_alpha(self, warmup_alpha: float):
+        """Set the alpha value to use during warmup (from lr schedule)."""
+        if self.is_in_warmup():
+            self.current_alpha = warmup_alpha
+    
+    def add_iteration_data(self, projected_grads: list[float], was_accepted: bool):
+        """
+        Add data from one iteration.
+        
+        Args:
+            projected_grads: List of projected gradient coefficients c_i
+            was_accepted: Whether the update was accepted
+        """
+        self.total_iterations += 1
+        
+        # Compute CV for this iteration
+        if len(projected_grads) > 1:
+            grads_array = np.array(projected_grads)
+            mean_grad = np.mean(grads_array)
+            std_grad = np.std(grads_array, ddof=1)  # Sample std
+            
+            # CV with stability constant
+            eps_num = 1e-7
+            cv = std_grad / (abs(mean_grad) + eps_num)
+            self.cv_history.append(cv)
+        else:
+            # Single direction: CV undefined, use special value
+            self.cv_history.append(float('nan'))
+        
+        # Record acceptance
+        self.acceptance_history.append(was_accepted)
+        
+        # Update parameters based on sliding window averages
+        # Only if we're past the warmup period
+        if not self.is_in_warmup():
+            self._update_parameters()
+    
+    def _update_parameters(self):
+        """Update ε and α based on current sliding window statistics."""
+        if len(self.cv_history) == 0:
+            return
+        
+        # Calculate current CV average (ignoring NaN values)
+        valid_cvs = [cv for cv in self.cv_history if not np.isnan(cv)]
+        if len(valid_cvs) > 0:
+            avg_cv = np.mean(valid_cvs)
+        else:
+            avg_cv = float('nan')
+        
+        # Calculate current acceptance rate
+        if len(self.acceptance_history) > 0:
+            acceptance_rate = sum(self.acceptance_history) / len(self.acceptance_history)
+        else:
+            acceptance_rate = 0.0
+        
+        # Update ε based on CV
+        if not np.isnan(avg_cv):
+            old_eps = self.current_eps
+            if avg_cv > 1.0:
+                # Noise dominates: increase ε
+                self.current_eps = min(self.current_eps * 1.01, self.eps_max)
+            elif avg_cv < 0.4:
+                # Likely bias: decrease ε
+                self.current_eps = max(self.current_eps * 0.99, self.eps_min)
+            
+            if abs(self.current_eps - old_eps) > 1e-10:
+                self.eps_updates += 1
+        
+        # Update α based on acceptance rate and CV
+        old_alpha = self.current_alpha
+        if acceptance_rate < 0.4 and (np.isnan(avg_cv) or avg_cv < 1.0):
+            # Step too large: decrease α
+            self.current_alpha = max(self.current_alpha * 0.99, self.alpha_min)
+        elif acceptance_rate > 0.6:
+            # Step too small: increase α
+            self.current_alpha = min(self.current_alpha * 1.01, self.alpha_max)
+        
+        if abs(self.current_alpha - old_alpha) > 1e-10:
+            self.alpha_updates += 1
+    
+    def get_current_cv(self) -> float:
+        """Get the current average CV from the sliding window."""
+        if len(self.cv_history) == 0:
+            return float('nan')
+        
+        valid_cvs = [cv for cv in self.cv_history if not np.isnan(cv)]
+        if len(valid_cvs) == 0:
+            return float('nan')
+        
+        return np.mean(valid_cvs)
+    
+    def get_current_acceptance_rate(self) -> float:
+        """Get the current acceptance rate from the sliding window."""
+        if len(self.acceptance_history) == 0:
+            return 0.0
+        
+        return sum(self.acceptance_history) / len(self.acceptance_history)
+    
+    def get_adaptive_parameters(self) -> tuple[float, float]:
+        """Get the current adaptive parameters (eps, alpha)."""
+        return self.current_eps, self.current_alpha
+    
+    def get_statistics(self) -> dict:
+        """Get comprehensive statistics about the adaptive tracking."""
+        return {
+            'total_iterations': self.total_iterations,
+            'current_eps': self.current_eps,
+            'current_alpha': self.current_alpha,
+            'current_cv': self.get_current_cv(),
+            'current_acceptance_rate': self.get_current_acceptance_rate(),
+            'window_fill': len(self.cv_history),
+            'window_size': self.window_size,
+            'eps_updates': self.eps_updates,
+            'alpha_updates': self.alpha_updates,
+            'eps_bounds': (self.eps_min, self.eps_max),
+            'alpha_bounds': (self.alpha_min, self.alpha_max),
+            'is_in_warmup': self.is_in_warmup(),
+            'warmup_iters': self.warmup_iters,
+            'current_iter': self.current_iter
         }
 
 def improved_kronzo_step(model, 
@@ -325,6 +522,64 @@ def improved_kronzo_step(model,
     
     return (baseline_loss.item(), best_loss, best_direction_info, 
             should_update, candidate_step_data)
+
+def adaptive_improved_kronzo_step(model, X, Y, step, zo_random_seed, directional_q, 
+                                 lr_adaptive, ctx_obj, strategy, max_factor, 
+                                 kronzo_sampling_number, b_dict, step_interval, 
+                                 loss_history, adaptive_tracker, get_batch_fn):
+    """
+    Improved directional KronZO step with adaptive parameter tuning.
+    
+    Uses coefficient of variation (CV) to adapt ε and acceptance rate to adapt α.
+    Supports warmup period where parameters follow fixed schedule until warmup completes.
+    
+    During warmup:
+    - ε remains constant at initial value
+    - α follows the provided lr_adaptive (from lr schedule)
+    
+    After warmup:
+    - ε adapts based on CV of projected gradients
+    - α adapts based on acceptance rate and CV
+    """
+    # Get adaptive parameters from tracker
+    current_eps, current_alpha = adaptive_tracker.get_adaptive_parameters()
+    
+    # During warmup, use provided lr_adaptive instead of adaptive alpha
+    if adaptive_tracker.is_in_warmup():
+        effective_alpha = lr_adaptive  # Use lr schedule during warmup
+        effective_eps = adaptive_tracker.initial_eps  # Keep eps constant during warmup
+        adaptive_tracker.set_warmup_alpha(lr_adaptive)  # Update tracker for consistency
+    else:
+        effective_alpha = current_alpha  # Use adaptive alpha after warmup
+        effective_eps = current_eps     # Use adaptive eps after warmup
+    
+    # Call the standard improved kronzo step with effective parameters
+    (baseline_loss, best_candidate_loss, best_direction_info, 
+     should_update, candidate_step_data) = improved_kronzo_step(
+        model, X, Y, step, zo_random_seed, directional_q,
+        zo_eps=effective_eps,  # Use effective eps (constant during warmup, adaptive after)
+        lr=effective_alpha,    # Use effective alpha (lr schedule during warmup, adaptive after)
+        ctx_obj=ctx_obj, strategy=strategy, max_factor=max_factor,
+        kronzo_sampling_number=kronzo_sampling_number, b_dict=b_dict,
+        step_interval=step_interval, loss_history=loss_history,
+        get_batch_fn=get_batch_fn
+    )
+    
+    # Extract gradient information for adaptive tracking
+    projected_grads = best_direction_info.get('all_projected_grads', [])
+    
+    # Update adaptive tracker with this iteration's data
+    # This will only update parameters if we're past warmup
+    adaptive_tracker.add_iteration_data(projected_grads, should_update)
+    
+    # Add adaptive information to best_direction_info for logging
+    best_direction_info['adaptive_eps'] = effective_eps
+    best_direction_info['adaptive_alpha'] = effective_alpha
+    best_direction_info['current_cv'] = adaptive_tracker.get_current_cv()
+    best_direction_info['current_acceptance_rate'] = adaptive_tracker.get_current_acceptance_rate()
+    best_direction_info['is_in_warmup'] = adaptive_tracker.is_in_warmup()
+    
+    return baseline_loss, best_candidate_loss, best_direction_info, should_update, candidate_step_data
 
 def improved_kronzo_update(model,
                           optimizer,  # kept for API compatibility

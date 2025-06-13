@@ -30,7 +30,8 @@ from kronzo_utils import (
 )
 from kronzo_utils_improved_directional import (
     ImprovedDirectionalHistory, improved_kronzo_step, 
-    improved_kronzo_update, improved_kronzo_update_momentum
+    improved_kronzo_update, improved_kronzo_update_momentum,
+    AdaptiveParameterTracker, adaptive_improved_kronzo_step
 )
 from kronzo_utils_new_improved_directional import (
     NewImprovedDirectionalHistory, new_improved_kronzo_step,
@@ -100,6 +101,15 @@ adaptive_eps_window = 20
 adaptive_eps_lr_coupling = 0.5
 adaptive_eps_success_high = 0.7
 adaptive_eps_success_low = 0.3
+adaptive_lr_eps = False         # Enable CV-based adaptive ε and acceptance rate-based adaptive α  
+lr_adaptive = 1e-3              # Initial adaptive learning rate α
+adaptive_window_size = 100      # Sliding window size for CV and acceptance rate tracking
+adaptive_eps_min = 5e-4         # Minimum allowed ε value
+adaptive_eps_max = 5e-2         # Maximum allowed ε value
+adaptive_alpha_min = 1e-4       # Minimum allowed α value
+adaptive_alpha_max = 3e-2       # Maximum allowed α value
+adaptive_eps_init = 1e-3        # Initial ε value for adaptive tracking
+adaptive_alpha_init = None      # Initial α value (uses lr_adaptive if None)
 loss_history_size = 10  # For improved directional KronZO conservative updates
 use_baseline_history = False
 use_lowrank_factorization = False
@@ -316,24 +326,66 @@ if not init_from == 'resume':
     b_dict = {}  # B matrix storage for KronZO methods
     va_dict = {}  # V_A matrix storage for low-rank KronZO methods
     vb_dict = {}  # V_B matrix storage for low-rank KronZO methods
-    improved_directional_history = ImprovedDirectionalHistory(loss_history_size)  # For improved KronZO
+    improved_directional_history = ImprovedDirectionalHistory(loss_history_size, track_baseline_losses=use_baseline_history)  # For improved KronZO
     new_improved_directional_history = NewImprovedDirectionalHistory(loss_history_size, use_baseline_history=use_baseline_history)  # For new improved KronZO
+    # Initialize adaptive tracker for improved KronZO
+    adaptive_tracker = None
+    if adaptive_lr_eps and train_method == 'improved_kronzo':
+        initial_alpha = lr_adaptive if adaptive_alpha_init is None else adaptive_alpha_init
+        adaptive_tracker = AdaptiveParameterTracker(
+            window_size=adaptive_window_size,
+            eps_min=adaptive_eps_min,
+            eps_max=adaptive_eps_max,
+            alpha_min=adaptive_alpha_min,
+            alpha_max=adaptive_alpha_max,
+            initial_eps=adaptive_eps_init,
+            initial_alpha=initial_alpha,
+            warmup_iters=warmup_iters  # Pass warmup_iters to the tracker
+        )
 elif 'exp_avg_m' in checkpoint and (train_method in ['lozom', 'mezom', 'dilozo', 'kronzo', 'dikronzo', 'improved_kronzo', 'new_improved_kronzo'] and use_momentum):
     exp_avg_m = checkpoint['exp_avg_m']
     v_old_dict = checkpoint.get('v_old_dict', {})
     b_dict = checkpoint.get('b_dict', {})  # Load B matrices for KronZO methods
     va_dict = checkpoint.get('va_dict', {})  # Load V_A matrices for low-rank KronZO methods
     vb_dict = checkpoint.get('vb_dict', {})  # Load V_B matrices for low-rank KronZO methods
-    improved_directional_history = ImprovedDirectionalHistory(loss_history_size)  # For improved KronZO (not saved in checkpoint)
+    improved_directional_history = ImprovedDirectionalHistory(loss_history_size, track_baseline_losses=use_baseline_history)  # For improved KronZO (not saved in checkpoint)
     new_improved_directional_history = NewImprovedDirectionalHistory(loss_history_size, use_baseline_history=use_baseline_history)  # For new improved KronZO (not saved in checkpoint)
+    # Initialize adaptive tracker for improved KronZO (not saved in checkpoint)
+    adaptive_tracker = None
+    if adaptive_lr_eps and train_method == 'improved_kronzo':
+        initial_alpha = lr_adaptive if adaptive_alpha_init is None else adaptive_alpha_init
+        adaptive_tracker = AdaptiveParameterTracker(
+            window_size=adaptive_window_size,
+            eps_min=adaptive_eps_min,
+            eps_max=adaptive_eps_max,
+            alpha_min=adaptive_alpha_min,
+            alpha_max=adaptive_alpha_max,
+            initial_eps=adaptive_eps_init,
+            initial_alpha=initial_alpha,
+            warmup_iters=warmup_iters  # Pass warmup_iters to the tracker
+        )
 else:
     exp_avg_m = {}
     v_old_dict = {}
     b_dict = {}  # Initialize B matrix storage
     va_dict = {}  # Initialize V_A matrix storage for low-rank KronZO methods
     vb_dict = {}  # Initialize V_B matrix storage for low-rank KronZO methods
-    improved_directional_history = ImprovedDirectionalHistory(loss_history_size)  # For improved KronZO
+    improved_directional_history = ImprovedDirectionalHistory(loss_history_size, track_baseline_losses=use_baseline_history)  # For improved KronZO
     new_improved_directional_history = NewImprovedDirectionalHistory(loss_history_size, use_baseline_history=use_baseline_history)  # For new improved KronZO
+    # Initialize adaptive tracker for improved KronZO
+    adaptive_tracker = None
+    if adaptive_lr_eps and train_method == 'improved_kronzo':
+        initial_alpha = lr_adaptive if adaptive_alpha_init is None else adaptive_alpha_init
+        adaptive_tracker = AdaptiveParameterTracker(
+            window_size=adaptive_window_size,
+            eps_min=adaptive_eps_min,
+            eps_max=adaptive_eps_max,
+            alpha_min=adaptive_alpha_min,
+            alpha_max=adaptive_alpha_max,
+            initial_eps=adaptive_eps_init,
+            initial_alpha=initial_alpha,
+            warmup_iters=warmup_iters  # Pass warmup_iters to the tracker
+        )
 
 if use_adaptive_eps:
     adaptive_eps_manager = AdaptiveZoEps(
@@ -520,8 +572,6 @@ while True:
                 lowrank_zo_update_momentum(raw_model, optimizer, accumulated_projected_grad, first_zo_seed, v_dict, exp_avg_m, v_old_dict, step, lr, rank_r, step_interval, weight_decay, master_process, momentum_beta, current_rank=current_rank_val)
             else:
                 lowrank_zo_update(raw_model, optimizer, accumulated_projected_grad, first_zo_seed, v_dict, step, lr, rank_r, weight_decay, master_process, current_rank=current_rank_val)
-        else:
-            lowrank_zo_update_direct(raw_model, optimizer, accumulated_grad_dict, lr, weight_decay)
         # Add adaptive epsilon support for LOZO 
         if use_adaptive_eps and adaptive_eps_manager is not None:
             current_lr_for_eps_record = get_lr(iter_num) if decay_lr else learning_rate
@@ -899,28 +949,54 @@ while True:
         accumulated_should_update = False
         accumulated_candidate_step_data = None
         accumulated_best_candidate_loss = 0.0
+        accumulated_baseline_loss = 0.0  # NEW: Track baseline loss for history
+        
+        # Set current iteration for warmup tracking
+        if adaptive_lr_eps and adaptive_tracker is not None:
+            adaptive_tracker.set_current_iter(iter_num)
         
         for micro_step in range(gradient_accumulation_steps):
             current_zo_seed = np.random.randint(1_000_000_000)
             
-            # Evaluate current directional candidates on SAME batch (X, Y)
-            (baseline_loss_val, best_candidate_loss_val, best_direction_info, 
-             should_update_val, candidate_step_data_val) = improved_kronzo_step(
-                raw_model, X, Y,
-                step=step,
-                zo_random_seed=current_zo_seed,
-                directional_q=directional_q,
-                zo_eps=effective_zo_eps_to_use,
-                lr=lr,  # Use current learning rate for candidate evaluation
-                ctx_obj=ctx,
-                strategy=kron_strategy,
-                max_factor=kron_max_factor,
-                kronzo_sampling_number=kronzo_sampling_number,
-                b_dict=b_dict,
-                step_interval=step_interval,
-                loss_history=improved_directional_history,
-                get_batch_fn=lambda: get_batch('train')  # CRITICAL: Use fresh batches for evaluation
-            )
+            # Choose between adaptive and standard version based on flag
+            if adaptive_lr_eps and adaptive_tracker is not None:
+                # Use adaptive version with CV-based ε and acceptance rate-based α tuning
+                (baseline_loss_val, best_candidate_loss_val, best_direction_info, 
+                 should_update_val, candidate_step_data_val) = adaptive_improved_kronzo_step(
+                    raw_model, X, Y,
+                    step=step,
+                    zo_random_seed=current_zo_seed,
+                    directional_q=directional_q,
+                    lr_adaptive=lr_adaptive,  # Use adaptive learning rate parameter
+                    ctx_obj=ctx,
+                    strategy=kron_strategy,
+                    max_factor=kron_max_factor,
+                    kronzo_sampling_number=kronzo_sampling_number,
+                    b_dict=b_dict,
+                    step_interval=step_interval,
+                    loss_history=improved_directional_history,
+                    adaptive_tracker=adaptive_tracker,
+                    get_batch_fn=lambda: get_batch('train')  # CRITICAL: Use fresh batches for evaluation
+                )
+            else:
+                # Use standard version with fixed ε and lr
+                (baseline_loss_val, best_candidate_loss_val, best_direction_info, 
+                 should_update_val, candidate_step_data_val) = improved_kronzo_step(
+                    raw_model, X, Y,
+                    step=step,
+                    zo_random_seed=current_zo_seed,
+                    directional_q=directional_q,
+                    zo_eps=effective_zo_eps_to_use,
+                    lr=lr,  # Use current learning rate for candidate evaluation
+                    ctx_obj=ctx,
+                    strategy=kron_strategy,
+                    max_factor=kron_max_factor,
+                    kronzo_sampling_number=kronzo_sampling_number,
+                    b_dict=b_dict,
+                    step_interval=step_interval,
+                    loss_history=improved_directional_history,
+                    get_batch_fn=lambda: get_batch('train')  # CRITICAL: Use fresh batches for evaluation
+                )
             
             accumulated_loss += baseline_loss_val / gradient_accumulation_steps
             
@@ -929,9 +1005,10 @@ while True:
                 accumulated_should_update = should_update_val
                 accumulated_candidate_step_data = candidate_step_data_val
                 accumulated_best_candidate_loss = best_candidate_loss_val
+                accumulated_baseline_loss = baseline_loss_val  # NEW: Store baseline loss
                 
-                # Enhanced logging with history information
-                if master_process and step % 50 == 0:  # Log every 50 steps
+                # Enhanced logging with history information and adaptive parameters
+                if master_process and step % log_interval == 0:  # Log every log_interval steps as requested
                     history_info = improved_directional_history.get_history_info()
                     improvement = best_direction_info.get('improvement', 0.0)
                     relative_improvement = best_direction_info.get('relative_improvement', 0.0)
@@ -939,18 +1016,57 @@ while True:
                     candidate_range = best_direction_info.get('candidate_loss_range', 0.0)
                     num_candidates = best_direction_info.get('num_candidates', 0)
                     
-                    print(f"  Improved KronZO step {step}: baseline={baseline_loss_val:.4f}, "
-                          f"best_candidate={best_candidate_loss_val:.4f}, "
-                          f"improvement={improvement:.4f} ({relative_improvement:.2%}), "
-                          f"history_phase={history_info['phase']}, threshold={history_info['threshold']:.4f}, "
-                          f"fresh_batch={used_fresh_batch}, range={candidate_range:.4f}, "
-                          f"candidates={num_candidates}, accept={should_update_val}")
+                    # Base logging message
+                    log_msg = (f"  Improved KronZO step {step}: baseline={baseline_loss_val:.4f}, "
+                              f"best_candidate={best_candidate_loss_val:.4f}, "
+                              f"improvement={improvement:.4f} ({relative_improvement:.2%}), "
+                              f"history_phase={history_info['phase']}, threshold={history_info['threshold']:.4f}, "
+                              f"fresh_batch={used_fresh_batch}, range={candidate_range:.4f}, "
+                              f"candidates={num_candidates}, accept={should_update_val}")
+                    
+                    # Add adaptive information if using adaptive version
+                    if adaptive_lr_eps and adaptive_tracker is not None:
+                        adaptive_eps = best_direction_info.get('adaptive_eps', effective_zo_eps_to_use)
+                        adaptive_alpha = best_direction_info.get('adaptive_alpha', lr)
+                        current_cv = best_direction_info.get('current_cv', float('nan'))
+                        current_acceptance_rate = best_direction_info.get('current_acceptance_rate', 0.0)
+                        is_in_warmup = best_direction_info.get('is_in_warmup', False)
+                        
+                        # Format CV value
+                        cv_str = f"{current_cv:.3f}" if not np.isnan(current_cv) else "N/A"
+                        
+                        # Check if parameters were updated (by comparing with previous values)
+                        prev_stats = adaptive_tracker.get_statistics()
+                        eps_updated = prev_stats['eps_updates'] > getattr(adaptive_tracker, '_prev_eps_updates', 0)
+                        alpha_updated = prev_stats['alpha_updates'] > getattr(adaptive_tracker, '_prev_alpha_updates', 0)
+                        
+                        # Store current counts for next comparison
+                        adaptive_tracker._prev_eps_updates = prev_stats['eps_updates']
+                        adaptive_tracker._prev_alpha_updates = prev_stats['alpha_updates']
+                        
+                        update_info = []
+                        if is_in_warmup:
+                            update_info.append("WARMUP")
+                        else:
+                            if eps_updated:
+                                update_info.append("eps↑" if adaptive_eps > effective_zo_eps_to_use else "eps↓")
+                            if alpha_updated:
+                                update_info.append("alpha↑" if adaptive_alpha > lr else "alpha↓")
+                        update_str = f", status={'/'.join(update_info)}" if update_info else ", status=none"
+                        
+                        # Show warmup info
+                        warmup_info = f" (warmup {iter_num}/{warmup_iters})" if is_in_warmup else ""
+                        
+                        log_msg += (f", adaptive_eps={adaptive_eps:.2e}, adaptive_alpha={adaptive_alpha:.2e}, "
+                                   f"CV={cv_str}, accept_rate={current_acceptance_rate:.2%}{update_str}{warmup_info}")
+                    
+                    print(log_msg)
             
             # Get next batch for next iteration (but not after the last micro-step)
             if micro_step < gradient_accumulation_steps - 1:
                 X, Y = get_batch('train')
         
-        # Apply update if accepted and update loss history
+        # Apply update if accepted
         if accumulated_should_update:
             if use_momentum:
                 improved_kronzo_update_momentum(
@@ -963,11 +1079,17 @@ while True:
                     master_process=master_process, weight_decay=weight_decay
                 )
             
-            # FIXED: Update loss history ONLY when update is accepted
-            improved_directional_history.add_loss(accumulated_best_candidate_loss)
+            # Update history based on mode: SUCCESS MODE: only when update is accepted
+            if not use_baseline_history:
+                improved_directional_history.add_loss(accumulated_best_candidate_loss)
             
         elif master_process and step % 50 == 0:
-            print(f"  Improved KronZO step {step}: Update rejected - candidate not better than history")
+            mode_text = "baseline history" if use_baseline_history else "success history"
+            print(f"  Improved KronZO step {step}: Update rejected - candidate not better than {mode_text}")
+        
+        # Update history based on mode: BASELINE MODE: always update regardless of acceptance
+        if use_baseline_history:
+            improved_directional_history.add_baseline_loss(accumulated_baseline_loss)
         
         # Set loss for logging (use baseline loss for consistency with evaluation)
         loss = torch.tensor(accumulated_loss, device=device, dtype=torch.float32)
@@ -1102,9 +1224,21 @@ while True:
             'loss': f'{lossf:.4f}',
             'lr': f'{lr:.2e}',
             'mem': f'{memory_allocated:.1f}GB',
-            'mfu': f'{running_mfu*100:.1f}%',
-            'step': step
+            'mfu': f'{running_mfu*100:.1f}%'
         }
+        
+        # Add adaptive improved kronzo info to progress bar
+        if train_method == 'improved_kronzo' and adaptive_lr_eps and adaptive_tracker is not None:
+            current_cv = adaptive_tracker.get_current_cv()
+            current_acceptance_rate = adaptive_tracker.get_current_acceptance_rate()
+            current_eps, current_alpha = adaptive_tracker.get_adaptive_parameters()
+            
+            # Replace classic lr with adaptive lr
+            pbar_info['lr'] = f'{current_alpha:.2e}'
+            pbar_info['eps'] = f'{current_eps:.2e}'
+            pbar_info['CV'] = f"{current_cv:.2f}" if not np.isnan(current_cv) else "N/A"
+            pbar_info['acc'] = f"{current_acceptance_rate:.1%}"
+        
         if rank_adaptive and (train_method == 'lozo' or train_method == 'lozom' or train_method == 'dilozo'):
             current_rank = get_current_rank(iter_num, max_iters, min_rank, max_rank, rank_adaptive, rank_r)
             pbar_info['rank'] = f'{current_rank}/{max_rank}'
